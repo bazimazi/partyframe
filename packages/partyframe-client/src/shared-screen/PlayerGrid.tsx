@@ -44,6 +44,7 @@ export function PlayerGrid({
             className="player-card"
             data-active={active || undefined}
             data-dimmed={dimmed || undefined}
+            data-offline={!player.connected || undefined}
             style={{ "--player-color": player.color } as React.CSSProperties}
           >
             <PlayerAvatar player={player} size={64} />
@@ -51,11 +52,14 @@ export function PlayerGrid({
             <div className="player-card__body">
               <span className="player-card__name">{player.name}</span>
               <span className="player-card__meta">
-                {player.isBot && <span className="tag tag--bot">BOT</span>}
+                {player.isBot && <span className="tag tag--bot">{t("player.bot")}</span>}
+                {player.spectator && (
+                  <span className="tag tag--spectator">{t("player.spectator")}</span>
+                )}
                 {!player.connected && (
                   <span className="tag tag--offline">{t("controller.disconnected")}</span>
                 )}
-                {showReady && player.ready && (
+                {showReady && player.ready && !player.isBot && (
                   <span className="tag tag--ready">{t("controller.ready")}</span>
                 )}
               </span>

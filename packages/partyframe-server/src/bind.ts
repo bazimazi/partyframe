@@ -2,7 +2,8 @@
  * Host-process bindings for the session room.
  *
  * The room must not import a game catalog or parse `.env`. The app installs
- * games, then calls `bindRuntime()` once before any room is created.
+ * games, then calls `bindRuntime()` once before any room is created;
+ * `listen()` does both.
  */
 
 export interface LogContext {
@@ -26,9 +27,11 @@ export interface RootLogger extends Logger {
 
 export const EVENT = {
   SERVER_STARTED: "SERVER_STARTED",
+  SERVER_STOPPED: "SERVER_STOPPED",
   SESSION_CREATED: "SESSION_CREATED",
   SESSION_DISPOSED: "SESSION_DISPOSED",
   SESSION_EXPIRED: "SESSION_EXPIRED",
+  SESSION_REFUSED: "SESSION_REFUSED",
   HOST_ATTACHED: "HOST_ATTACHED",
   HOST_DISCONNECTED: "HOST_DISCONNECTED",
   HOST_RECONNECTED: "HOST_RECONNECTED",
@@ -46,15 +49,27 @@ export const EVENT = {
   ROUND_STARTED: "ROUND_STARTED",
   ROUND_ENDED: "ROUND_ENDED",
   STATUS_CHANGED: "STATUS_CHANGED",
+  SETTINGS_REJECTED: "SETTINGS_REJECTED",
   GAME_ERROR: "GAME_ERROR",
+  METADATA_FAILED: "METADATA_FAILED",
 } as const;
 
 export interface RuntimeHost {
   defaultGameId: string;
+  /** Ceiling for `settings.maxPlayers`, further capped by the game and the protocol. */
   maxPlayers: number;
+  /** How long an empty session survives before it is reclaimed. */
   sessionTimeoutMs: number;
+  /** Absolute lifetime of a session, empty or not. */
   sessionMaxAgeMs: number;
+  /** Refuses new sessions beyond this many live ones. */
+  maxSessions: number;
   devToolsEnabled: boolean;
+  /**
+   * Developer tool: delays every inbound message by this many milliseconds so
+   * timing bugs show up on a LAN. Mutable at runtime; ignored in production.
+   */
+  simulatedLatencyMs: number;
   log: RootLogger;
 }
 
@@ -63,21 +78,20 @@ export const RUNTIME_DEFAULTS = {
   maxPlayers: 8,
   sessionTimeoutMs: 10 * 60 * 1000,
   sessionMaxAgeMs: 3 * 60 * 60 * 1000,
+  maxSessions: 500,
 } as const;
 
 /** Only `defaultGameId` is required. Everything else has a default. */
-export type BindRuntimeInput = Partial<Omit<RuntimeHost, "defaultGameId">> & {
+export type BindRuntimeInput = Partial<
+  Omit<RuntimeHost, "defaultGameId" | "simulatedLatencyMs">
+> & {
   defaultGameId: string;
 };
 
 let host: RuntimeHost | null = null;
 
-function createConsoleLogger(base: LogContext = {}): RootLogger {
-  const write = (
-    fn: (...args: unknown[]) => void,
-    event: string,
-    context?: LogContext,
-  ): void => {
+export function createConsoleLogger(base: LogContext = {}): RootLogger {
+  const write = (fn: (...args: unknown[]) => void, event: string, context?: LogContext): void => {
     fn(event, { ...base, ...context });
   };
   return {
@@ -91,13 +105,26 @@ function createConsoleLogger(base: LogContext = {}): RootLogger {
   };
 }
 
+/** A logger that says nothing. Handy for tests and embedded use. */
+export const silentLogger: RootLogger = {
+  debug() {},
+  info() {},
+  warn() {},
+  error() {},
+  child() {
+    return silentLogger;
+  },
+};
+
 export function bindRuntime(next: BindRuntimeInput): void {
   host = {
     defaultGameId: next.defaultGameId,
     maxPlayers: next.maxPlayers ?? RUNTIME_DEFAULTS.maxPlayers,
     sessionTimeoutMs: next.sessionTimeoutMs ?? RUNTIME_DEFAULTS.sessionTimeoutMs,
     sessionMaxAgeMs: next.sessionMaxAgeMs ?? RUNTIME_DEFAULTS.sessionMaxAgeMs,
+    maxSessions: next.maxSessions ?? RUNTIME_DEFAULTS.maxSessions,
     devToolsEnabled: next.devToolsEnabled ?? process.env.NODE_ENV !== "production",
+    simulatedLatencyMs: 0,
     log: next.log ?? createConsoleLogger(),
   };
 }

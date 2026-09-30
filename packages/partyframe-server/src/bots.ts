@@ -11,8 +11,18 @@ import { AVATARS, PLAYER_COLORS } from "@partyframe/protocol";
 
 /** Short, easy-to-read names that will not be mistaken for a real player's. */
 const BOT_NAMES = [
-  "Botly", "Circuit", "Pixel", "Widget", "Gizmo", "Sprocket",
-  "Chip", "Nova", "Echo", "Blip", "Cogs", "Fizz",
+  "Botly",
+  "Circuit",
+  "Pixel",
+  "Widget",
+  "Gizmo",
+  "Sprocket",
+  "Chip",
+  "Nova",
+  "Echo",
+  "Blip",
+  "Cogs",
+  "Fizz",
 ];
 
 export interface BotIdentity {
@@ -34,8 +44,7 @@ export function makeBotIdentity(
   takenColors: ReadonlySet<string>,
 ): BotIdentity {
   const name =
-    BOT_NAMES.find((candidate) => !takenNames.has(candidate.toLowerCase())) ??
-    `Bot ${index + 1}`;
+    BOT_NAMES.find((candidate) => !takenNames.has(candidate.toLowerCase())) ?? `Bot ${index + 1}`;
 
   const color =
     PLAYER_COLORS.find((candidate) => !takenColors.has(candidate)) ??

@@ -41,7 +41,11 @@ export function JoinLanding() {
             aria-invalid={code.length > 0 && !parsed.success}
           />
         </label>
-        <button type="submit" className="btn btn--primary btn--big btn--block" disabled={!parsed.success}>
+        <button
+          type="submit"
+          className="btn btn--primary btn--big btn--block"
+          disabled={!parsed.success}
+        >
           {t("join.go")}
         </button>
       </form>

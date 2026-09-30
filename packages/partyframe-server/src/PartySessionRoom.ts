@@ -1,44 +1,50 @@
 /**
  * The one room type the platform needs.
  *
- * A `PartySessionRoom` owns a `GameSession`: its public code, its lobby, its
- * players (human and bot), its lifecycle and its authoritative clock. The game
- * being played is a plugin resolved at creation time, so this file contains no
- * Bomb Party logic whatsoever - swapping in a different game changes only which
- * adapter is looked up.
+ * A `PartySessionRoom` owns a session: its public code, its lobby, its players
+ * (human and bot), its lifecycle and its authoritative clock. The game being
+ * played is a plugin resolved at creation time and driven through a
+ * `MatchEngine`, so this file contains no game logic whatsoever - swapping in a
+ * different game changes only which adapter is looked up.
  *
  * Authority model, in one sentence: clients send *intentions*, this room decides
  * what actually happened, and the resulting state is what everyone renders.
  */
 
-import { Room, ServerError, matchMaker, type Client } from "@colyseus/core";
+import { Room, ServerError, matchMaker, type Client, type Deferred } from "@colyseus/core";
+import { ArraySchema } from "@colyseus/schema";
 import {
-  Rng,
+  MatchEngine,
   randomSeed,
-  validateSync,
-  type BotStrategy,
-  type GameContext,
+  rankPlayers,
   type GamePlayer,
+  type PlayerChange,
   type PlayerRegistry,
 } from "@partyframe/game-core";
 import {
   ABSOLUTE_MAX_PLAYERS,
   AVATARS,
   CLOCK_BEACON_MS,
+  CLOSE_CODE,
   ClockPingSchema,
   HOST_RECONNECT_SECONDS,
   JoinOptionsSchema,
   MAX_MESSAGE_BYTES,
   MSG,
   PARTY_ROOM,
+  PLATFORM_EVENT,
   PLAYER_COLORS,
+  PLAYER_NAME_MAX,
   PLAYER_RECONNECT_SECONDS,
   SERVER_TICK_MS,
   SessionActionSchema,
+  isRunningStatus,
   type ClientRole,
   type ControllerEnvelope,
   type ControllerMode,
+  type GameEventInput,
   type GameEventMessage,
+  type LateJoinPolicy,
   type PartyErrorCode,
   type SessionAction,
   type SessionStatus,
@@ -54,7 +60,7 @@ import {
   RateLimiter,
   SESSION_ACTION_LIMITS,
 } from "./rateLimit.js";
-import { PlayerSchema, SessionSchema } from "./sessionSchema.js";
+import { PlayerSchema, type SessionSchema } from "./sessionSchema.js";
 
 /** Options the matchmaker passes when a shared screen creates a session. */
 export interface RoomCreateOptions {
@@ -70,6 +76,7 @@ export interface RoomMetadata {
   status: SessionStatus;
   playerCount: number;
   maxPlayers: number;
+  lateJoin: LateJoinPolicy;
 }
 
 interface ClientData {
@@ -77,38 +84,25 @@ interface ClientData {
   joinedAt: number;
 }
 
-/** Colyseus close codes must be >= 4000; these map onto `PartyErrorCode`. */
-const JOIN_ERROR_CODE = 4400;
-
 function rejectJoin(code: PartyErrorCode): never {
   // The message carries the machine-readable code; the client localises it and
   // never shows this string to a player.
-  throw new ServerError(JOIN_ERROR_CODE, code);
+  throw new ServerError(CLOSE_CODE.JOIN_REFUSED, code);
 }
 
-/** Status values in which the game plugin should be ticking. */
-const RUNNING_STATUSES = new Set<SessionStatus>(["STARTING", "PLAYING", "ROUND_END"]);
+function describeError(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
+}
 
 export class PartySessionRoom extends Room<SessionSchema, RoomMetadata> {
   override maxClients = ABSOLUTE_MAX_PLAYERS + 2;
 
   private adapter!: GameNetworkAdapter;
-  private gameState: unknown;
-  private gameOptions: unknown;
-  private rng!: Rng;
+  private engine!: MatchEngine;
   private registry!: PlayerRegistry;
+  private logger!: Logger;
 
-  /** Presentation cues queued by the game during the current tick. */
-  private eventQueue: GameEventMessage[] = [];
-  /** Status the game asked for during the current tick, applied once at the end. */
-  private requestedStatus: SessionStatus | null = null;
-
-  /** Bot strategies, one per difficulty, shared by every bot at that level. */
-  private botStrategies = new Map<string, BotStrategy<unknown, unknown, unknown>>();
-  /** A bot's chosen action and the time it should be submitted. */
-  private botPending = new Map<string, { action: unknown; dueAt: number }>();
-
-  private readonly gameLimiter = new RateLimiter(GAME_ACTION_LIMITS);
+  private gameLimiter = new RateLimiter(GAME_ACTION_LIMITS);
   private readonly sessionLimiter = new RateLimiter(SESSION_ACTION_LIMITS);
   private readonly clockLimiter = new RateLimiter(CLOCK_PING_LIMITS);
 
@@ -119,8 +113,10 @@ export class PartySessionRoom extends Room<SessionSchema, RoomMetadata> {
   private controllerRevision = 0;
   /** Last envelope sent to each controller, so unchanged state is not resent. */
   private lastControllerJson = new Map<string, string>();
-
-  private logger!: Logger;
+  /** Last projection published, so unchanged game state produces no patch. */
+  private lastPublicJson = "";
+  /** The shared screen's pending reconnection, so a replacement TV can cancel it. */
+  private hostReconnection: Deferred<Client> | null = null;
 
   // ---------------------------------------------------------------- lifecycle
 
@@ -128,6 +124,13 @@ export class PartySessionRoom extends Room<SessionSchema, RoomMetadata> {
     const host = runtimeHost();
     const gameId = options.gameId ?? host.defaultGameId;
     this.adapter = requireAdapter(gameId);
+    this.gameLimiter = new RateLimiter(this.adapter.game.actionRateLimit ?? GAME_ACTION_LIMITS);
+
+    const live = await matchMaker.query({ name: PARTY_ROOM });
+    if (live.length >= host.maxSessions) {
+      host.log.warn(EVENT.SESSION_REFUSED, { sessions: live.length });
+      throw new ServerError(CLOSE_CODE.JOIN_REFUSED, "SERVER_FULL");
+    }
 
     // Generated here rather than by the caller so a client can never choose,
     // guess or reuse a code. Colyseus awaits `onCreate` before admitting anyone,
@@ -145,10 +148,6 @@ export class PartySessionRoom extends Room<SessionSchema, RoomMetadata> {
       gameId: this.adapter.game.id,
     });
 
-    this.rng = new Rng(options.seed ?? randomSeed());
-    this.gameOptions = this.adapter.game.parseOptions({});
-    this.gameState = this.adapter.game.createState(this.gameOptions);
-
     const state = this.adapter.createState();
     state.publicCode = publicCode;
     state.gameId = this.adapter.game.id;
@@ -160,6 +159,21 @@ export class PartySessionRoom extends Room<SessionSchema, RoomMetadata> {
     this.setState(state);
 
     this.registry = this.createRegistry();
+    this.engine = new MatchEngine(
+      this.adapter.game,
+      {
+        players: this.registry,
+        getStatus: () => this.state.status as SessionStatus,
+        setStatus: (status) => this.setStatus(status),
+        deliver: (event, to) => this.deliver(event, to),
+        onGameError: (error, phase) => {
+          this.logger.error(EVENT.GAME_ERROR, { phase, message: describeError(error) });
+        },
+        onMatchEnded: (winnerIds) => this.recordWinners(winnerIds),
+      },
+      options.seed ?? randomSeed(),
+    );
+    state.settings.gameOptions = JSON.stringify(this.engine.options ?? {});
 
     // The session outlives an empty room on purpose: a TV that drops off Wi-Fi
     // must be able to come back to the same game. `checkExpiry` reclaims it.
@@ -170,6 +184,7 @@ export class PartySessionRoom extends Room<SessionSchema, RoomMetadata> {
 
     this.registerMessageHandlers();
     this.setSimulationInterval((deltaMs) => this.tick(deltaMs), SERVER_TICK_MS);
+    this.projectGameState(Date.now());
     void this.publishMetadata();
 
     this.logger.info(EVENT.SESSION_CREATED, { maxPlayers: state.settings.maxPlayers });
@@ -180,16 +195,21 @@ export class PartySessionRoom extends Room<SessionSchema, RoomMetadata> {
     if (!parsed.success) rejectJoin("INVALID_PAYLOAD");
 
     const { role } = parsed.data;
-    if (this.state.status === "CLOSED") rejectJoin("ROOM_CLOSED");
+    const status = this.state.status as SessionStatus;
+    if (status === "CLOSED") rejectJoin("ROOM_CLOSED");
 
     if (role === "host") {
-      // A second shared screen is refused rather than silently taking over, so a
-      // stray tab cannot hijack the TV mid-game.
+      // A second shared screen is refused while the first is online, so a stray
+      // tab cannot hijack the TV mid-game. A TV whose predecessor is gone (or
+      // stuck in its reconnection window) may take over.
       const hostOnline = this.clients.some(
         (client) => (client.userData as ClientData | undefined)?.role === "host",
       );
       if (hostOnline) rejectJoin("NOT_ALLOWED");
     } else {
+      if (isRunningStatus(status) && this.lateJoinPolicy() === "deny") {
+        rejectJoin("GAME_IN_PROGRESS");
+      }
       const seated = [...this.state.players.values()].filter((p) => !p.isBot).length;
       if (seated >= this.state.settings.maxPlayers) rejectJoin("ROOM_FULL");
     }
@@ -202,6 +222,9 @@ export class PartySessionRoom extends Room<SessionSchema, RoomMetadata> {
     this.lastConnectedAt = Date.now();
 
     if (auth.role === "host") {
+      // A replacement TV supersedes the one that dropped.
+      this.hostReconnection?.reject?.(new Error("replaced"));
+      this.hostReconnection = null;
       this.state.hostConnected = true;
       this.logger.info(EVENT.HOST_ATTACHED, { playerId: client.sessionId });
     } else {
@@ -220,14 +243,28 @@ export class PartySessionRoom extends Room<SessionSchema, RoomMetadata> {
     if (role === "host") {
       this.state.hostConnected = false;
       this.logger.warn(EVENT.HOST_DISCONNECTED, { consented });
-      if (consented) return;
+      if (consented) {
+        // A TV closing an empty lobby on purpose has nothing worth keeping.
+        // Not awaited: disposal cannot complete while this onLeave is in flight.
+        if (this.state.status === "LOBBY" && this.joinedHumans().length === 0) {
+          this.state.status = "CLOSED";
+          void this.disconnect(CLOSE_CODE.SESSION_ENDED);
+        }
+        return;
+      }
+      const reconnection = this.allowReconnection(client, HOST_RECONNECT_SECONDS);
+      this.hostReconnection = reconnection;
       try {
         // A TV losing Wi-Fi must not end everyone's game.
-        await this.allowReconnection(client, HOST_RECONNECT_SECONDS);
+        const reconnected = await reconnection;
+        this.hostReconnection = null;
+        reconnected.userData = data;
         this.state.hostConnected = true;
-        this.sendWelcome(client);
+        this.lastConnectedAt = Date.now();
+        this.sendWelcome(reconnected);
         this.logger.info(EVENT.HOST_RECONNECTED);
       } catch {
+        if (this.hostReconnection === reconnection) this.hostReconnection = null;
         this.logger.info(EVENT.HOST_DISCONNECTED, { recovered: false });
       }
       return;
@@ -244,7 +281,7 @@ export class PartySessionRoom extends Room<SessionSchema, RoomMetadata> {
     player.connected = false;
     this.notifyGameOfPlayer(client.sessionId, "disconnected");
     this.emitPlatformEvent({
-      kind: "player-disconnected",
+      kind: PLATFORM_EVENT.PLAYER_DISCONNECTED,
       messageKey: "event.playerDisconnected",
       params: { name: player.name },
       playerId: player.id,
@@ -259,7 +296,7 @@ export class PartySessionRoom extends Room<SessionSchema, RoomMetadata> {
       this.lastConnectedAt = Date.now();
       this.notifyGameOfPlayer(client.sessionId, "reconnected");
       this.emitPlatformEvent({
-        kind: "player-reconnected",
+        kind: PLATFORM_EVENT.PLAYER_RECONNECTED,
         messageKey: "event.playerReconnected",
         params: { name: row?.name ?? "" },
         playerId: client.sessionId,
@@ -279,10 +316,22 @@ export class PartySessionRoom extends Room<SessionSchema, RoomMetadata> {
     this.sessionLimiter.clear();
     this.clockLimiter.clear();
     this.lastControllerJson.clear();
-    this.logger.info(EVENT.SESSION_DISPOSED);
+    this.logger?.info(EVENT.SESSION_DISPOSED);
+  }
+
+  /** A bug in a handler is logged with context rather than crashing the process. */
+  override onUncaughtException(error: Error, methodName: string): void {
+    (this.logger ?? runtimeHost().log).error(EVENT.GAME_ERROR, {
+      phase: methodName,
+      message: describeError((error as { cause?: unknown }).cause ?? error),
+    });
   }
 
   // ------------------------------------------------------------------ players
+
+  private lateJoinPolicy(): LateJoinPolicy {
+    return this.adapter.game.lateJoin ?? "spectate";
+  }
 
   /** Creates or revives the row for a controller's seat. */
   private ensurePlayerRow(playerId: string): PlayerSchema {
@@ -303,8 +352,10 @@ export class PartySessionRoom extends Room<SessionSchema, RoomMetadata> {
     return player;
   }
 
-  private pickFreeColor(): string {
-    const taken = new Set([...this.state.players.values()].map((p) => p.color));
+  private pickFreeColor(except?: string): string {
+    const taken = new Set(
+      [...this.state.players.values()].filter((p) => p.id !== except).map((p) => p.color),
+    );
     return PLAYER_COLORS.find((c) => !taken.has(c)) ?? PLAYER_COLORS[0];
   }
 
@@ -313,12 +364,34 @@ export class PartySessionRoom extends Room<SessionSchema, RoomMetadata> {
     return AVATARS.find((a) => !taken.has(a)) ?? AVATARS[0];
   }
 
+  /**
+   * Keeps display names distinct on the shared screen.
+   *
+   * Two "Ali"s would be indistinguishable from four metres away, so the second
+   * becomes "Ali 2". The suffix eats into the length limit rather than
+   * overflowing it.
+   */
+  private uniqueName(desired: string, selfId: string): string {
+    const taken = new Set(
+      [...this.state.players.values()]
+        .filter((p) => p.joined && p.id !== selfId)
+        .map((p) => p.name.toLowerCase()),
+    );
+    if (!taken.has(desired.toLowerCase())) return desired;
+    for (let n = 2; n < 100; n += 1) {
+      const suffix = ` ${n}`;
+      const candidate = `${desired.slice(0, PLAYER_NAME_MAX - suffix.length).trimEnd()}${suffix}`;
+      if (!taken.has(candidate.toLowerCase())) return candidate;
+    }
+    return desired;
+  }
+
   private removePlayer(playerId: string, reason: "left" | "kicked"): void {
     const player = this.state.players.get(playerId);
     if (!player) return;
 
+    const wasParticipant = player.joined && !player.spectator;
     this.state.players.delete(playerId);
-    this.botPending.delete(playerId);
     this.gameLimiter.forget(playerId);
     this.sessionLimiter.forget(playerId);
     this.clockLimiter.forget(playerId);
@@ -328,33 +401,36 @@ export class PartySessionRoom extends Room<SessionSchema, RoomMetadata> {
       this.state.hostPlayerId = this.electHostPlayer();
     }
 
-    this.notifyGameOfPlayer(playerId, "left");
-    this.emitPlatformEvent({
-      kind: "player-left",
-      messageKey: "event.playerLeft",
-      params: { name: player.name },
-      playerId,
-    });
+    if (wasParticipant) this.notifyGameOfPlayer(playerId, "left");
+    if (player.joined) {
+      this.emitPlatformEvent({
+        kind: PLATFORM_EVENT.PLAYER_LEFT,
+        messageKey: "event.playerLeft",
+        params: { name: player.name },
+        playerId,
+      });
+    }
     this.logger.info(EVENT.PLAYER_LEFT, { playerId, reason });
     void this.publishMetadata();
   }
 
   /** The longest-seated joined human becomes host when the previous one leaves. */
   private electHostPlayer(): string {
-    const candidate = [...this.state.players.values()]
-      .filter((p) => !p.isBot && p.joined)
-      .sort((a, b) => a.seat - b.seat)[0];
-
+    const candidate = this.joinedHumans().sort((a, b) => a.seat - b.seat)[0];
     for (const player of this.state.players.values()) {
       player.isHost = candidate ? player.id === candidate.id : false;
     }
     return candidate?.id ?? "";
   }
 
-  /** Players the game rules operate on: everyone who has completed joining. */
-  private gamePlayers(): PlayerSchema[] {
+  private joinedHumans(): PlayerSchema[] {
+    return [...this.state.players.values()].filter((p) => !p.isBot && p.joined);
+  }
+
+  /** Players the game rules operate on: joined and not sitting this match out. */
+  private participants(): PlayerSchema[] {
     return [...this.state.players.values()]
-      .filter((p) => p.joined)
+      .filter((p) => p.joined && !p.spectator)
       .sort((a, b) => a.seat - b.seat);
   }
 
@@ -365,16 +441,26 @@ export class PartySessionRoom extends Room<SessionSchema, RoomMetadata> {
       isBot: p.isBot,
       connected: p.connected,
       score: p.score,
+      wins: p.wins,
       seat: p.seat,
     });
+    const participant = (playerId: string): PlayerSchema | undefined => {
+      const row = this.state.players.get(playerId);
+      return row && row.joined && !row.spectator ? row : undefined;
+    };
 
     return {
-      all: () => this.gamePlayers().map(toGamePlayer),
+      all: () => this.participants().map(toGamePlayer),
       get: (playerId) => {
-        const row = this.state.players.get(playerId);
-        return row && row.joined ? toGamePlayer(row) : undefined;
+        const row = participant(playerId);
+        return row ? toGamePlayer(row) : undefined;
       },
-      has: (playerId) => Boolean(this.state.players.get(playerId)?.joined),
+      has: (playerId) => participant(playerId) !== undefined,
+      connected: () =>
+        this.participants()
+          .filter((p) => p.connected)
+          .map(toGamePlayer),
+      ranked: () => rankPlayers(this.participants()).map(toGamePlayer),
       addScore: (playerId, delta) => {
         const row = this.state.players.get(playerId);
         if (row) row.score = Math.max(0, row.score + delta);
@@ -390,8 +476,10 @@ export class PartySessionRoom extends Room<SessionSchema, RoomMetadata> {
 
   /** Adds or removes bots so the roster matches `settings.botCount`. */
   private reconcileBots(): void {
+    if (!this.engine.supportsBots) this.state.settings.botCount = 0;
+
     const bots = [...this.state.players.values()].filter((p) => p.isBot);
-    const humans = [...this.state.players.values()].filter((p) => !p.isBot && p.joined);
+    const humans = this.joinedHumans();
     const capacity = Math.max(0, this.state.settings.maxPlayers - humans.length);
     const target = Math.min(this.state.settings.botCount, capacity);
 
@@ -399,7 +487,10 @@ export class PartySessionRoom extends Room<SessionSchema, RoomMetadata> {
       const victim = bots[i - 1];
       if (!victim) break;
       this.state.players.delete(victim.id);
-      this.botPending.delete(victim.id);
+      this.lastControllerJson.delete(victim.id);
+      if (isRunningStatus(this.state.status as SessionStatus) && !victim.spectator) {
+        this.notifyGameOfPlayer(victim.id, "left");
+      }
       this.logger.info(EVENT.BOT_REMOVED, { playerId: victim.id });
     }
 
@@ -409,7 +500,7 @@ export class PartySessionRoom extends Room<SessionSchema, RoomMetadata> {
       const identity = makeBotIdentity(i, takenNames, takenColors);
 
       const bot = new PlayerSchema();
-      bot.id = `bot-${this.roomId}-${i}-${this.nextSeat}`;
+      bot.id = `bot-${this.roomId}-${this.nextSeat}`;
       bot.seat = this.nextSeat++;
       bot.name = identity.name;
       bot.avatar = identity.avatar;
@@ -418,6 +509,8 @@ export class PartySessionRoom extends Room<SessionSchema, RoomMetadata> {
       bot.connected = true;
       bot.joined = true;
       bot.ready = true;
+      // A bot added mid-match waits for the next one, like a late human would.
+      bot.spectator = isRunningStatus(this.state.status as SessionStatus);
       this.state.players.set(bot.id, bot);
       this.logger.info(EVENT.BOT_ADDED, { playerId: bot.id });
     }
@@ -427,107 +520,76 @@ export class PartySessionRoom extends Room<SessionSchema, RoomMetadata> {
     void this.publishMetadata();
   }
 
-  private botStrategy(): BotStrategy<unknown, unknown, unknown> {
-    const difficulty = this.state.settings.botDifficulty;
-    let strategy = this.botStrategies.get(difficulty);
-    if (!strategy) {
-      strategy = this.adapter.game.createBot(
-        difficulty === "easy" || difficulty === "hard" ? difficulty : "medium",
-      );
-      this.botStrategies.set(difficulty, strategy);
-    }
-    return strategy;
-  }
-
-  /**
-   * Drives every bot through the human action path.
-   *
-   * A bot never mutates game state directly: it produces the same payload a
-   * phone would send, and that payload goes through the same validation and the
-   * same `handleAction` call.
-   */
-  private tickBots(ctx: GameContext<unknown, unknown>, now: number): void {
-    const strategy = this.botStrategy();
-
-    for (const bot of this.gamePlayers()) {
-      if (!bot.isBot) continue;
-
-      const pending = this.botPending.get(bot.id);
-      if (pending) {
-        if (now < pending.dueAt) continue;
-        this.botPending.delete(bot.id);
-        this.applyGameAction(bot.id, pending.action, now);
-        continue;
-      }
-
-      const decision = strategy.decide(ctx, bot.id);
-      if (decision) {
-        this.botPending.set(bot.id, {
-          action: decision.action,
-          dueAt: now + Math.max(0, decision.delayMs),
-        });
-      }
-    }
-  }
-
   // ----------------------------------------------------------------- messages
 
   private registerMessageHandlers(): void {
-    this.onMessage(MSG.SESSION_ACTION, (client, payload: unknown) => {
-      if (!this.checkPayload(client, payload)) return;
-      if (!this.sessionLimiter.tryConsume(client.sessionId, Date.now())) {
-        this.sendError(client, "RATE_LIMITED");
-        this.logger.warn(EVENT.RATE_LIMITED, { playerId: client.sessionId, channel: "session" });
-        return;
-      }
+    this.onMessage(
+      MSG.SESSION_ACTION,
+      this.withSimulatedLatency((client, payload: unknown) => {
+        if (!this.checkPayload(client, payload)) return;
+        if (!this.sessionLimiter.tryConsume(client.sessionId, Date.now())) {
+          this.sendError(client, "RATE_LIMITED");
+          this.logger.warn(EVENT.RATE_LIMITED, { playerId: client.sessionId, channel: "session" });
+          return;
+        }
 
-      const parsed = SessionActionSchema.safeParse(payload);
-      if (!parsed.success) {
-        this.sendError(client, "INVALID_PAYLOAD");
-        return;
-      }
-      this.handleSessionAction(client, parsed.data);
-    });
+        const parsed = SessionActionSchema.safeParse(payload);
+        if (!parsed.success) {
+          this.sendError(client, "INVALID_PAYLOAD");
+          return;
+        }
+        this.handleSessionAction(client, parsed.data);
+      }),
+    );
 
-    this.onMessage(MSG.GAME_ACTION, (client, payload: unknown) => {
-      if (!this.checkPayload(client, payload)) return;
-      const now = Date.now();
+    this.onMessage(
+      MSG.GAME_ACTION,
+      this.withSimulatedLatency((client, payload: unknown) => {
+        if (!this.checkPayload(client, payload)) return;
+        const now = Date.now();
 
-      if (!this.gameLimiter.tryConsume(client.sessionId, now)) {
-        this.sendError(client, "RATE_LIMITED");
-        this.logger.warn(EVENT.RATE_LIMITED, { playerId: client.sessionId, channel: "game" });
-        return;
-      }
+        if (!this.gameLimiter.tryConsume(client.sessionId, now)) {
+          this.sendError(client, "RATE_LIMITED");
+          this.logger.warn(EVENT.RATE_LIMITED, { playerId: client.sessionId, channel: "game" });
+          return;
+        }
 
-      const data = client.userData as ClientData | undefined;
-      if (data?.role !== "controller") {
-        this.sendError(client, "NOT_ALLOWED");
-        return;
-      }
-      if (!RUNNING_STATUSES.has(this.state.status as SessionStatus)) {
-        this.sendError(client, "WRONG_STATE");
-        return;
-      }
+        const data = client.userData as ClientData | undefined;
+        if (data?.role !== "controller") {
+          this.sendError(client, "NOT_ALLOWED");
+          return;
+        }
+        if (!this.engine.running) {
+          this.sendError(client, "WRONG_STATE");
+          return;
+        }
+        if (!this.registry.has(client.sessionId)) {
+          this.sendError(client, "NOT_ALLOWED");
+          return;
+        }
 
-      const player = this.state.players.get(client.sessionId);
-      if (!player?.joined) {
-        this.sendError(client, "NOT_ALLOWED");
-        return;
-      }
-
-      const validated = validateSync(this.adapter.game.actionSchema, payload);
-      if (!validated.ok) {
-        this.sendError(client, "INVALID_PAYLOAD");
-        this.logger.debug(EVENT.ACTION_REJECTED, {
-          playerId: client.sessionId,
-          issues: validated.issues,
-        });
-        return;
-      }
-
-      const applied = this.applyGameAction(client.sessionId, validated.value, now);
-      if (!applied) this.sendError(client, "WRONG_STATE");
-    });
+        const result = this.engine.act(client.sessionId, payload, now);
+        switch (result.status) {
+          case "applied":
+            this.logger.debug(EVENT.PLAYER_ACTION, { playerId: client.sessionId });
+            break;
+          case "invalid":
+            this.sendError(client, "INVALID_PAYLOAD");
+            this.logger.debug(EVENT.ACTION_REJECTED, {
+              playerId: client.sessionId,
+              issues: result.issues,
+            });
+            break;
+          case "refused":
+            this.sendError(client, "WRONG_STATE");
+            break;
+          case "error":
+            this.sendError(client, "INTERNAL");
+            break;
+        }
+        this.afterGameStep(now);
+      }),
+    );
 
     this.onMessage(MSG.CLOCK_PING, (client, payload: unknown) => {
       if (!this.clockLimiter.tryConsume(client.sessionId, Date.now())) return;
@@ -538,6 +600,28 @@ export class PartySessionRoom extends Room<SessionSchema, RoomMetadata> {
   }
 
   /**
+   * Developer tool: holds inbound messages for `simulatedLatencyMs` so timing
+   * bugs that only appear on real networks reproduce on a LAN. Order is
+   * preserved because every message waits the same amount. Never active in
+   * production, where the runtime refuses to enable dev tools.
+   */
+  private withSimulatedLatency<T>(
+    handler: (client: Client, payload: T) => void,
+  ): (client: Client, payload: T) => void {
+    return (client, payload) => {
+      const host = runtimeHost();
+      const delay = host.devToolsEnabled ? host.simulatedLatencyMs : 0;
+      if (delay <= 0) {
+        handler(client, payload);
+        return;
+      }
+      this.clock.setTimeout(() => {
+        if (this.clients.includes(client)) handler(client, payload);
+      }, delay);
+    };
+  }
+
+  /**
    * Rejects payloads that are too large before any parsing work happens.
    *
    * Colyseus has already decoded the message by this point, so this is a guard
@@ -545,7 +629,7 @@ export class PartySessionRoom extends Room<SessionSchema, RoomMetadata> {
    * defence - the transport's own frame limit handles that.
    */
   private checkPayload(client: Client, payload: unknown): boolean {
-    let size = 0;
+    let size: number;
     try {
       size = JSON.stringify(payload ?? null).length;
     } catch {
@@ -566,34 +650,45 @@ export class PartySessionRoom extends Room<SessionSchema, RoomMetadata> {
     const player = this.state.players.get(client.sessionId);
     const isHostPlayer = Boolean(player && player.isHost);
     const canControlSession = isHostScreen || isHostPlayer;
+    const status = this.state.status as SessionStatus;
 
     switch (action.type) {
       case "set-profile": {
         if (!player) return this.sendError(client, "NOT_ALLOWED");
-        if (this.state.status === "CLOSED") return this.sendError(client, "ROOM_CLOSED");
+        if (status === "CLOSED") return this.sendError(client, "ROOM_CLOSED");
 
         const firstJoin = !player.joined;
-        player.name = action.name;
+        player.name = this.uniqueName(action.name, player.id);
         player.avatar = action.avatar;
-        player.color = action.color;
+        // Colours identify players on the TV, so a second pick of a taken colour
+        // is quietly replaced with a free one.
+        const colorTaken = [...this.state.players.values()].some(
+          (p) => p.id !== player.id && p.joined && p.color === action.color,
+        );
+        player.color = colorTaken ? this.pickFreeColor(player.id) : action.color;
         player.joined = true;
 
         if (firstJoin) {
+          player.spectator = isRunningStatus(status) && this.lateJoinPolicy() !== "play";
           if (this.state.hostPlayerId === "") {
             this.state.hostPlayerId = player.id;
             player.isHost = true;
           }
-          this.notifyGameOfPlayer(player.id, "joined");
+          if (!player.spectator) this.notifyGameOfPlayer(player.id, "joined");
           this.emitPlatformEvent({
-            kind: "player-joined",
+            kind: PLATFORM_EVENT.PLAYER_JOINED,
             messageKey: "event.playerJoined",
             params: { name: player.name },
             playerId: player.id,
           });
-          this.logger.info(EVENT.PLAYER_JOINED, { playerId: player.id });
+          this.logger.info(EVENT.PLAYER_JOINED, {
+            playerId: player.id,
+            spectator: player.spectator,
+          });
           this.reconcileBots();
         }
         void this.publishMetadata();
+        this.pushControllerState(client, true);
         return;
       }
 
@@ -611,38 +706,42 @@ export class PartySessionRoom extends Room<SessionSchema, RoomMetadata> {
 
       case "start-game": {
         if (!canControlSession) return this.sendError(client, "NOT_ALLOWED");
-        if (this.state.status !== "LOBBY") return this.sendError(client, "WRONG_STATE");
-        this.startGame();
+        if (status !== "LOBBY") return this.sendError(client, "WRONG_STATE");
+        if (!this.startMatch()) this.sendError(client, "NOT_ENOUGH_PLAYERS");
         return;
       }
 
       case "rematch": {
         if (!canControlSession) return this.sendError(client, "NOT_ALLOWED");
-        if (this.state.status !== "GAME_OVER") return this.sendError(client, "WRONG_STATE");
-        this.startGame();
+        if (status !== "GAME_OVER") return this.sendError(client, "WRONG_STATE");
+        if (!this.startMatch()) this.sendError(client, "NOT_ENOUGH_PLAYERS");
         return;
       }
 
       case "return-to-lobby": {
         if (!canControlSession) return this.sendError(client, "NOT_ALLOWED");
-        if (this.state.status !== "GAME_OVER") return this.sendError(client, "WRONG_STATE");
+        if (status !== "GAME_OVER") return this.sendError(client, "WRONG_STATE");
         this.returnToLobby();
         return;
       }
 
       case "update-settings": {
         if (!canControlSession) return this.sendError(client, "NOT_ALLOWED");
-        if (this.state.status !== "LOBBY") return this.sendError(client, "WRONG_STATE");
-        this.applySettings(action.settings);
+        if (status !== "LOBBY") return this.sendError(client, "WRONG_STATE");
+        if (!this.applySettings(action.settings)) this.sendError(client, "INVALID_PAYLOAD");
         return;
       }
 
       case "kick-player": {
         if (!canControlSession) return this.sendError(client, "NOT_ALLOWED");
         if (action.playerId === client.sessionId) return this.sendError(client, "NOT_ALLOWED");
-        const target = this.clients.find((c) => c.sessionId === action.playerId);
+        // Only seated controllers can be kicked. The shared screen has no player
+        // row, so a phone host can never disconnect the TV.
+        const target = this.state.players.get(action.playerId);
+        if (!target || target.isBot) return this.sendError(client, "NOT_ALLOWED");
+        const targetClient = this.clients.find((c) => c.sessionId === action.playerId);
         this.removePlayer(action.playerId, "kicked");
-        target?.leave(4001);
+        targetClient?.leave(CLOSE_CODE.KICKED);
         return;
       }
 
@@ -660,11 +759,12 @@ export class PartySessionRoom extends Room<SessionSchema, RoomMetadata> {
     botCount?: number;
     botDifficulty?: "easy" | "medium" | "hard";
     gameOptions?: Record<string, unknown>;
-  }): void {
+  }): boolean {
     const { settings } = this.state;
+    let ok = true;
 
     if (patch.maxPlayers !== undefined) {
-      const humans = [...this.state.players.values()].filter((p) => !p.isBot && p.joined).length;
+      const humans = this.joinedHumans().length;
       // Never set a cap below the number of people already in the room.
       settings.maxPlayers = Math.max(
         humans,
@@ -673,63 +773,70 @@ export class PartySessionRoom extends Room<SessionSchema, RoomMetadata> {
     }
     if (patch.botDifficulty !== undefined) {
       settings.botDifficulty = patch.botDifficulty;
-      this.botStrategies.clear();
+      this.engine.botDifficulty = patch.botDifficulty;
     }
     if (patch.botCount !== undefined) {
       settings.botCount = Math.max(0, Math.min(patch.botCount, ABSOLUTE_MAX_PLAYERS));
     }
     if (patch.gameOptions !== undefined) {
-      this.gameOptions = this.adapter.game.parseOptions(patch.gameOptions);
+      const result = this.engine.setOptions(patch.gameOptions);
+      if (result.ok) {
+        settings.gameOptions = JSON.stringify(this.engine.options ?? {});
+      } else {
+        ok = false;
+        this.logger.warn(EVENT.SETTINGS_REJECTED, { issues: result.issues });
+      }
     }
 
     this.reconcileBots();
+    this.projectGameState(Date.now());
+    return ok;
   }
 
   // ---------------------------------------------------------------- lifecycle
 
-  private startGame(): void {
+  /** Starts a match. Returns false, with a cue on the TV, when too few are seated. */
+  private startMatch(): boolean {
     this.reconcileBots();
 
-    const joined = this.gamePlayers();
-    if (joined.length < this.adapter.game.minPlayers) {
+    // Everyone who has joined by now plays, including last match's spectators.
+    for (const player of this.state.players.values()) {
+      if (player.joined) player.spectator = false;
+    }
+
+    const roster = this.participants();
+    if (roster.length < this.adapter.game.minPlayers) {
       this.emitPlatformEvent({
-        kind: "start-refused",
+        kind: PLATFORM_EVENT.START_REFUSED,
         messageKey: "host.needMorePlayers",
         params: { count: this.adapter.game.minPlayers },
       });
-      return;
+      return false;
     }
 
-    this.gameState = this.adapter.game.createState(this.gameOptions);
-    this.botPending.clear();
-    for (const player of this.state.players.values()) {
-      player.ready = false;
-    }
-
-    this.setStatus("STARTING");
-
-    const ctx = this.buildContext(Date.now());
-    this.adapter.game.start(ctx);
-    // A countdown game calls requestStatus("STARTING") to hold this phase, then
-    // PLAYING from update(). Anything else would sit here forever.
-    const holdStarting = this.requestedStatus === "STARTING";
-    this.finishTick(ctx);
-    if (this.state.status === "STARTING" && !holdStarting) {
-      this.setStatus("PLAYING");
-    }
-
-    this.logger.info(EVENT.GAME_STARTED, { players: joined.length });
-  }
-
-  private returnToLobby(): void {
-    this.gameState = this.adapter.game.createState(this.gameOptions);
-    this.botPending.clear();
     for (const player of this.state.players.values()) {
       player.ready = false;
       player.score = 0;
     }
+    this.state.winnerIds = new ArraySchema<string>();
+
+    const now = Date.now();
+    this.engine.start(now);
+    this.afterGameStep(now);
+    this.logger.info(EVENT.GAME_STARTED, { players: roster.length });
+    return true;
+  }
+
+  private returnToLobby(): void {
+    this.engine.resetState();
+    for (const player of this.state.players.values()) {
+      player.ready = false;
+      player.score = 0;
+      if (player.joined) player.spectator = false;
+    }
+    this.state.winnerIds = new ArraySchema<string>();
     this.setStatus("LOBBY");
-    this.projectGameState(Date.now());
+    this.afterGameStep(Date.now());
   }
 
   private setStatus(status: SessionStatus): void {
@@ -739,118 +846,68 @@ export class PartySessionRoom extends Room<SessionSchema, RoomMetadata> {
     void this.publishMetadata();
   }
 
-  /**
-   * Applies a status the game asked for, filtered by what the platform allows.
-   *
-   * The game may move between playing states, but it may not put the session
-   * back into the lobby or close it - those are platform decisions.
-   */
-  private applyRequestedStatus(): void {
-    const requested = this.requestedStatus;
-    this.requestedStatus = null;
-    if (!requested) return;
-
-    if (requested === "PLAYING" || requested === "ROUND_END") {
-      if (RUNNING_STATUSES.has(this.state.status as SessionStatus)) this.setStatus(requested);
-      return;
+  private recordWinners(winnerIds: string[]): void {
+    this.state.winnerIds = new ArraySchema<string>(...winnerIds);
+    for (const id of winnerIds) {
+      const row = this.state.players.get(id);
+      if (row) row.wins += 1;
     }
-    if (requested === "GAME_OVER") {
-      this.setStatus("GAME_OVER");
-      this.botPending.clear();
-      this.logger.info(EVENT.GAME_ENDED);
-    }
+    this.logger.info(EVENT.GAME_ENDED, { winners: winnerIds });
   }
 
   // -------------------------------------------------------------- game bridge
 
-  private buildContext(now: number): GameContext<unknown, unknown> {
-    return {
-      state: this.gameState,
-      options: this.gameOptions,
-      players: this.registry,
-      rng: this.rng,
-      now,
-      emit: (event) => {
-        this.eventQueue.push({ ...event, at: now });
-      },
-      requestStatus: (status) => {
-        this.requestedStatus = status;
-      },
-    };
+  private notifyGameOfPlayer(playerId: string, change: PlayerChange): void {
+    const now = Date.now();
+    this.engine.playerChanged(playerId, change, now);
+    this.afterGameStep(now);
   }
 
-  /** Runs one validated action through the rules and settles the resulting tick. */
-  private applyGameAction(playerId: string, action: unknown, now: number): boolean {
-    const ctx = this.buildContext(now);
-    let handled = false;
-    try {
-      handled = this.adapter.game.handleAction(ctx, playerId, action);
-    } catch (error) {
-      this.logger.error(EVENT.GAME_ERROR, {
-        playerId,
-        message: error instanceof Error ? error.message : String(error),
-      });
-      handled = false;
-    }
-    this.finishTick(ctx);
-    if (handled) this.logger.debug(EVENT.PLAYER_ACTION, { playerId });
-    return handled;
+  /** Publishes whatever a game step changed: projection first, then each phone. */
+  private afterGameStep(now: number): void {
+    this.projectGameState(now);
+    this.pushAllControllerStates();
   }
 
-  private notifyGameOfPlayer(
-    playerId: string,
-    change: "joined" | "left" | "disconnected" | "reconnected",
-  ): void {
-    const hook = this.adapter.game.onPlayerChanged;
-    if (!hook) return;
-    const ctx = this.buildContext(Date.now());
-    try {
-      hook.call(this.adapter.game, ctx, playerId, change);
-    } catch (error) {
-      this.logger.error(EVENT.GAME_ERROR, {
-        playerId,
-        message: error instanceof Error ? error.message : String(error),
-      });
-    }
-    this.finishTick(ctx);
-  }
-
-  /** Broadcasts queued events, applies status requests and republishes state. */
-  private finishTick(ctx: GameContext<unknown, unknown>): void {
-    if (
-      RUNNING_STATUSES.has(this.state.status as SessionStatus) &&
-      this.requestedStatus !== "GAME_OVER" &&
-      this.adapter.game.isFinished(ctx)
-    ) {
-      this.requestedStatus = "GAME_OVER";
-    }
-    this.applyRequestedStatus();
-    this.flushEvents();
-    this.projectGameState(ctx.now);
-  }
-
+  /**
+   * Mirrors the game's public projection into network state.
+   *
+   * The projection is serialised and compared to the last one, so a tick that
+   * changed nothing produces no patch and no re-render on the shared screen.
+   */
   private projectGameState(now: number): void {
-    const ctx = this.buildContext(now);
+    const publicState = this.engine.publicState(now);
+    if (publicState === undefined) return;
+
+    let json: string;
     try {
-      this.adapter.project(this.state, this.adapter.game.getPublicState(ctx));
+      json = JSON.stringify(publicState ?? null);
+    } catch (error) {
+      this.logger.error(EVENT.GAME_ERROR, { phase: "serialize", message: describeError(error) });
+      return;
+    }
+    if (json === this.lastPublicJson) return;
+    this.lastPublicJson = json;
+
+    try {
+      this.adapter.project(this.state, publicState);
       this.state.gameRevision += 1;
     } catch (error) {
-      this.logger.error(EVENT.GAME_ERROR, {
-        message: error instanceof Error ? error.message : String(error),
-      });
+      this.logger.error(EVENT.GAME_ERROR, { phase: "project", message: describeError(error) });
     }
   }
 
-  private flushEvents(): void {
-    if (this.eventQueue.length === 0) return;
-    const events = this.eventQueue;
-    this.eventQueue = [];
-    for (const event of events) {
+  /** Delivers a cue from the engine: to one phone, or to every screen. */
+  private deliver(event: GameEventMessage, to?: string): void {
+    if (to === undefined) {
       this.broadcast(MSG.GAME_EVENT, event);
+      return;
     }
+    const client = this.clients.find((c) => c.sessionId === to);
+    client?.send(MSG.GAME_EVENT, event);
   }
 
-  private emitPlatformEvent(event: Omit<GameEventMessage, "at">): void {
+  private emitPlatformEvent(event: GameEventInput): void {
     this.broadcast(MSG.GAME_EVENT, { ...event, at: Date.now() });
   }
 
@@ -858,7 +915,9 @@ export class PartySessionRoom extends Room<SessionSchema, RoomMetadata> {
 
   private controllerMode(player: PlayerSchema | undefined): ControllerMode {
     if (!player?.joined) return "setup";
-    switch (this.state.status as SessionStatus) {
+    const status = this.state.status as SessionStatus;
+    if (player.spectator && isRunningStatus(status)) return "spectating";
+    switch (status) {
       case "LOBBY":
         return "lobby";
       case "STARTING":
@@ -877,26 +936,17 @@ export class PartySessionRoom extends Room<SessionSchema, RoomMetadata> {
   private buildEnvelope(playerId: string): ControllerEnvelope {
     const player = this.state.players.get(playerId);
     const mode = this.controllerMode(player);
-
-    let gamePart: Pick<ControllerEnvelope, "active" | "game"> = { active: false, game: null };
-    if (player?.joined) {
-      const ctx = this.buildContext(Date.now());
-      try {
-        gamePart = this.adapter.game.getControllerState(ctx, playerId);
-      } catch (error) {
-        this.logger.error(EVENT.GAME_ERROR, {
-          playerId,
-          message: error instanceof Error ? error.message : String(error),
-        });
-      }
-    }
+    const projection =
+      player && this.registry.has(playerId)
+        ? this.engine.controllerState(playerId, Date.now())
+        : { active: false, game: null };
 
     return {
       mode,
       gameId: this.state.gameId,
-      active: gamePart.active,
+      active: projection.active,
       score: player?.score ?? 0,
-      game: gamePart.game,
+      game: projection.game,
       revision: this.controllerRevision,
     };
   }
@@ -948,19 +998,10 @@ export class PartySessionRoom extends Room<SessionSchema, RoomMetadata> {
   private tick(deltaMs: number): void {
     const now = Date.now();
 
-    if (RUNNING_STATUSES.has(this.state.status as SessionStatus)) {
-      const ctx = this.buildContext(now);
-      try {
-        this.adapter.game.update(ctx, deltaMs);
-        this.tickBots(ctx, now);
-      } catch (error) {
-        this.logger.error(EVENT.GAME_ERROR, {
-          message: error instanceof Error ? error.message : String(error),
-        });
-      }
-      this.finishTick(ctx);
+    if (this.engine.running) {
+      this.engine.tick(deltaMs, now);
+      this.projectGameState(now);
     }
-
     this.pushAllControllerStates();
 
     if (now - this.lastBeaconAt >= CLOCK_BEACON_MS) {
@@ -990,7 +1031,7 @@ export class PartySessionRoom extends Room<SessionSchema, RoomMetadata> {
 
     this.logger.info(EVENT.SESSION_EXPIRED, { idleFor, age });
     this.state.status = "CLOSED";
-    void this.disconnect(4002);
+    void this.disconnect(CLOSE_CODE.SESSION_ENDED);
   }
 
   // ----------------------------------------------------------------- metadata
@@ -1001,13 +1042,12 @@ export class PartySessionRoom extends Room<SessionSchema, RoomMetadata> {
         publicCode: this.state.publicCode,
         gameId: this.state.gameId,
         status: this.state.status as SessionStatus,
-        playerCount: [...this.state.players.values()].filter((p) => p.joined && !p.isBot).length,
+        playerCount: this.joinedHumans().length,
         maxPlayers: this.state.settings.maxPlayers,
+        lateJoin: this.lateJoinPolicy(),
       });
     } catch (error) {
-      this.logger.warn("METADATA_FAILED", {
-        message: error instanceof Error ? error.message : String(error),
-      });
+      this.logger.warn(EVENT.METADATA_FAILED, { message: describeError(error) });
     }
   }
 
@@ -1016,9 +1056,9 @@ export class PartySessionRoom extends Room<SessionSchema, RoomMetadata> {
   /**
    * Developer-mode shortcuts.
    *
-   * Reachable only when `ENABLE_DEV_TOOLS` is on *and* the build is not
-   * production, checked again at the call site. Platform commands are handled
-   * here; anything else is delegated to the game plugin.
+   * Reachable only when dev tools are enabled, which the runtime refuses in
+   * production. Platform commands are handled here; anything else is delegated
+   * to the game plugin's `devCommands`.
    */
   private runDevCommand(command: string, value?: number): void {
     switch (command) {
@@ -1037,15 +1077,12 @@ export class PartySessionRoom extends Room<SessionSchema, RoomMetadata> {
       }
       case "end-session": {
         this.state.status = "CLOSED";
-        void this.disconnect(4002);
+        void this.disconnect(CLOSE_CODE.SESSION_ENDED);
         return;
       }
       default: {
-        const handler = this.adapter.game.devCommands?.[command];
-        if (!handler) return;
-        const ctx = this.buildContext(Date.now());
-        handler(ctx, value);
-        this.finishTick(ctx);
+        const now = Date.now();
+        if (this.engine.runDevCommand(command, value, now)) this.afterGameStep(now);
       }
     }
   }

@@ -45,11 +45,34 @@ export const MSG = {
  * spoof or break layout on the shared screen, and no legitimate display name
  * needs them.
  */
-const UNSAFE_TEXT = new RegExp(
+// Combining and zero-width marks are exactly what this class exists to catch.
+/* eslint-disable no-misleading-character-class */
+export const UNSAFE_TEXT = new RegExp(
   "[\u0000-\u001F\u007F-\u009F\u00AD\u034F\u061C" +
     "\u200B-\u200F\u2028\u2029\u202A-\u202E\u2066-\u2069\uFEFF]",
   "gu",
 );
+/* eslint-enable no-misleading-character-class */
+
+/** Strips unsafe characters and collapses whitespace. Safe to show on a TV. */
+export function sanitizeText(value: string): string {
+  return value.replace(UNSAFE_TEXT, "").replace(/\s+/g, " ").trim();
+}
+
+/**
+ * A schema for short free text a phone types - an answer, a guess, a caption.
+ *
+ * Sanitises rather than rejects, like `PlayerNameSchema`, so a stray control
+ * character from a phone keyboard never produces a confusing error. Use it as
+ * a field of a game's `actionSchema`:
+ *
+ * ```ts
+ * actionSchema: z.object({ type: z.literal("guess"), text: textSchema(40) })
+ * ```
+ */
+export function textSchema(maxLength: number, minLength = 1) {
+  return z.string().transform(sanitizeText).pipe(z.string().min(minLength).max(maxLength));
+}
 
 /** Room code as it appears in a join URL. Normalised to upper case. */
 export const RoomCodeSchema = z
@@ -66,10 +89,7 @@ export const RoomCodeSchema = z
  * keyboard does not produce a confusing validation error. Whatever survives must
  * still be a non-empty name of sane length.
  */
-export const PlayerNameSchema = z
-  .string()
-  .transform((value) => value.replace(UNSAFE_TEXT, "").trim())
-  .pipe(z.string().min(PLAYER_NAME_MIN).max(PLAYER_NAME_MAX));
+export const PlayerNameSchema = textSchema(PLAYER_NAME_MAX, PLAYER_NAME_MIN);
 
 export const AvatarSchema = z.enum(AVATARS);
 export const ColorSchema = z.enum(PLAYER_COLORS);
@@ -151,3 +171,20 @@ export interface GameEventMessage {
   playerId?: string;
   at: number;
 }
+
+/** A cue before the platform stamps it with the server time. */
+export type GameEventInput = Omit<GameEventMessage, "at">;
+
+/**
+ * Event kinds the platform itself emits. Games may listen for these but may not
+ * emit them; the shared screen maps them to sounds and feed lines.
+ */
+export const PLATFORM_EVENT = {
+  PLAYER_JOINED: "player-joined",
+  PLAYER_LEFT: "player-left",
+  PLAYER_DISCONNECTED: "player-disconnected",
+  PLAYER_RECONNECTED: "player-reconnected",
+  GAME_STARTED: "game-started",
+  GAME_ENDED: "game-ended",
+  START_REFUSED: "start-refused",
+} as const;

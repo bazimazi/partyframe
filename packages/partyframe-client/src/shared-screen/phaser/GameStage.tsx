@@ -12,7 +12,8 @@
  */
 
 import { useEffect, useRef } from "react";
-import type { ClientPlayer, GameEventMessage } from "@partyframe/protocol";
+import type Phaser from "phaser";
+import type { ClientPlayer, GameEventMessage, SessionStatus } from "@partyframe/protocol";
 import { loadSceneForGame } from "../../bind.js";
 import { createStageBridge, type StageBridge } from "../../bridge.js";
 import { sfx } from "../../sfx.js";
@@ -23,6 +24,7 @@ export function GameStage({
   players,
   events,
   running,
+  status,
   serverNow,
 }: {
   gameId: string;
@@ -32,15 +34,15 @@ export function GameStage({
   /** Full event history; only the newly arrived tail is forwarded to the scene. */
   events: GameEventMessage[];
   running: boolean;
+  status: SessionStatus;
   serverNow: () => number;
 }) {
   const hostRef = useRef<HTMLDivElement | null>(null);
   const bridgeRef = useRef<StageBridge | null>(null);
   const forwardedRef = useRef(0);
 
-  if (!bridgeRef.current) {
-    bridgeRef.current = createStageBridge(serverNow);
-    bridgeRef.current.playSound = (voice) => sfx.play(voice);
+  if (bridgeRef.current === null) {
+    bridgeRef.current = createStageBridge(serverNow, (voice) => sfx.play(voice));
   }
 
   // Boot Phaser once per game type. Recreating it on every state change would
@@ -50,7 +52,7 @@ export function GameStage({
     const bridge = bridgeRef.current;
     if (!host || !bridge) return;
 
-    let instance: import("phaser").Game | null = null;
+    let instance: Phaser.Game | null = null;
     let cancelled = false;
 
     void (async () => {
@@ -96,8 +98,9 @@ export function GameStage({
     bridge.game = game;
     bridge.players = players;
     bridge.running = running;
+    bridge.status = status;
     bridge.serverNow = serverNow;
-  }, [game, players, running, serverNow]);
+  }, [game, players, running, status, serverNow]);
 
   // Forward only cues the scene has not seen. `events` is append-only and
   // capped, so comparing lengths is enough and avoids diffing arrays.

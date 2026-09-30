@@ -1,10 +1,10 @@
 {
   "name": "@bazimazi/partyframe-server",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "private": false,
   "license": "MIT",
   "type": "module",
-  "description": "Colyseus session room, PartyGame helpers, and HTTP/WebSocket host for partyframe.",
+  "description": "Authoritative party-game server: sessions, room codes, lobby, bots, reconnection and the PartyGame rules contract, on Colyseus.",
   "repository": {
     "type": "git",
     "url": "git+https://github.com/bazimazi/party-frame.git",
@@ -24,26 +24,37 @@
     }
   },
   "scripts": {
-    "build": "tsc -b",
-    "dev": "tsc -b --watch --preserveWatchOutput",
-    "typecheck": "tsc -b --pretty",
-    "clean": "rm -rf dist *.tsbuildinfo"
+    "build": "tsup",
+    "dev": "tsup --watch",
+    "typecheck": "tsc -p tsconfig.json",
+    "clean": "node -e \"require('node:fs').rmSync('dist',{recursive:true,force:true})\"",
+    "prepack": "npm run clean && npm run build"
   },
   "dependencies": {
-    "@colyseus/core": "0.16.24",
-    "@colyseus/schema": "3.0.76",
-    "@colyseus/ws-transport": "0.16.5",
-    "@partyframe/game-core": "0.1.0",
-    "@partyframe/protocol": "0.1.0"
+    "@colyseus/core": "^0.16.26",
+    "@colyseus/schema": "^3.0.76",
+    "@colyseus/ws-transport": "^0.16.5",
+    "@standard-schema/spec": "^1.0.0",
+    "zod": "^4.4.3"
   },
-  "bundleDependencies": [
-    "@partyframe/game-core",
-    "@partyframe/protocol"
-  ],
   "devDependencies": {
+    "@partyframe/game-core": "0.2.0",
+    "@partyframe/protocol": "0.2.0",
     "@types/node": "24.13.3"
   },
   "files": [
-    "dist"
-  ]
+    "dist",
+    "README.md"
+  ],
+  "keywords": [
+    "party-game",
+    "multiplayer",
+    "colyseus",
+    "game-server",
+    "websocket",
+    "jackbox"
+  ],
+  "engines": {
+    "node": ">=20.11"
+  }
 }

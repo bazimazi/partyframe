@@ -1,0 +1,410 @@
+/* Game-specific looks. The kit's variables keep them on-theme. */
+
+.tap-button {
+  min-height: 40vh;
+  font-size: 2.5rem;
+}
+
+.reflex {
+  display: grid;
+  gap: 1.25rem;
+  align-content: center;
+  justify-items: center;
+  height: 100%;
+  text-align: center;
+}
+
+.reflex__round {
+  margin: 0;
+  color: var(--pf-muted);
+  font-size: 1.4rem;
+}
+
+.reflex__light {
+  display: grid;
+  place-items: center;
+  width: min(60vh, 80%);
+  aspect-ratio: 1;
+  border-radius: 50%;
+  background: var(--pf-card-2);
+  font-size: clamp(2rem, 6vw, 4.5rem);
+  font-weight: 800;
+  transition: background 120ms ease;
+}
+
+.reflex[data-phase="wait"] .reflex__light {
+  background: #7f1d1d;
+}
+
+.reflex[data-phase="go"] .reflex__light {
+  background: var(--pf-accent);
+  color: var(--pf-on-accent);
+}
+
+.reflex .fuse {
+  width: min(60vh, 80%);
+}
+
+.reflex__times {
+  display: grid;
+  gap: 0.35rem;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  font-size: 1.4rem;
+}
+
+.reflex__times li {
+  display: flex;
+  gap: 1.5rem;
+  justify-content: space-between;
+}
+
+.reflex__foul {
+  color: var(--pf-muted);
+}
+
+.reflex-ctl__button {
+  min-height: 45vh;
+  font-size: 2.5rem;
+}
+
+.reflex-ctl[data-phase="go"] .reflex-ctl__button:not(:disabled) {
+  background: var(--pf-accent);
+}
+
+.reflex-ctl[data-phase="wait"] .reflex-ctl__button {
+  background: #7f1d1d;
+  color: #fecaca;
+}
+
+/* ---------- quiz ---------- */
+
+.quiz {
+  display: grid;
+  gap: 1rem;
+  align-content: start;
+  height: 100%;
+}
+
+.quiz__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  color: var(--pf-muted);
+  font-size: 1.2rem;
+}
+
+.quiz__question {
+  margin: 0;
+  font-size: clamp(1.6rem, 3.5vw, 2.8rem);
+  font-weight: 800;
+  line-height: 1.2;
+}
+
+.quiz__tiles {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0.75rem;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.quiz__tile {
+  position: relative;
+  display: grid;
+  gap: 0.25rem;
+  min-height: 6rem;
+  padding: 1rem 1.25rem;
+  border-radius: 14px;
+  background: color-mix(in srgb, var(--tile-color) 28%, var(--pf-card-2));
+  border: 2px solid color-mix(in srgb, var(--tile-color) 60%, transparent);
+  font-size: 1.4rem;
+  font-weight: 700;
+  transition:
+    opacity 300ms ease,
+    transform 300ms ease;
+}
+
+.quiz__tile-letter {
+  color: var(--tile-color);
+  font-size: 0.95rem;
+  font-weight: 800;
+}
+
+.quiz__tile[data-correct] {
+  transform: scale(1.03);
+  border-color: var(--pf-accent);
+  box-shadow: 0 0 0 4px color-mix(in srgb, var(--pf-accent) 35%, transparent);
+}
+
+.quiz__tile[data-wrong] {
+  opacity: 0.35;
+}
+
+.quiz__tile-pickers {
+  color: var(--pf-muted);
+  font-size: 0.95rem;
+  font-weight: 600;
+}
+
+.quiz__answered {
+  margin: 0;
+  color: var(--pf-muted);
+}
+
+.quiz__board {
+  width: min(32rem, 100%);
+}
+
+.quiz-ctl .choice__label {
+  font-size: 1.25rem;
+}
+
+/* ---------- doodle ---------- */
+
+.doodle {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(14rem, 18rem);
+  gap: 1rem;
+  height: 100%;
+  min-height: 0;
+}
+
+.doodle__stage {
+  position: relative;
+  display: grid;
+  place-items: center;
+  min-height: 0;
+}
+
+.doodle__canvas {
+  width: min(100%, calc(100dvh - 10rem));
+  aspect-ratio: 1;
+  border-radius: 12px;
+  background: #fff;
+  box-shadow: 0 10px 40px rgb(0 0 0 / 40%);
+}
+
+.doodle__overlay {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-content: center;
+  gap: 1rem;
+  padding: 2rem;
+  background: rgb(2 6 23 / 80%);
+  border-radius: 12px;
+  font-size: 1.5rem;
+  text-align: center;
+  animation: pf-pop 300ms ease both;
+}
+
+.doodle__reveal-word {
+  margin: 0;
+  font-size: clamp(2rem, 6vw, 4rem);
+  font-weight: 800;
+  letter-spacing: 0.05em;
+}
+
+.doodle__side {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  min-height: 0;
+}
+
+.doodle__turn,
+.doodle__drawer {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin: 0;
+  color: var(--pf-muted);
+}
+
+.doodle__hint {
+  margin: 0;
+  font-family: var(--pf-mono);
+  font-size: clamp(1.4rem, 2.5vw, 2rem);
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  white-space: pre;
+}
+
+.doodle__guesses {
+  flex: 1;
+  margin: 0;
+  padding: 0;
+  overflow: auto;
+  list-style: none;
+}
+
+.doodle__guess {
+  padding: 0.3rem 0;
+  border-bottom: 1px solid var(--pf-border);
+  color: var(--pf-muted);
+}
+
+.doodle__guess--correct {
+  color: var(--pf-accent);
+  font-weight: 700;
+}
+
+.doodle-ctl {
+  display: grid;
+  gap: 0.6rem;
+}
+
+.doodle-ctl__word {
+  margin: 0;
+  font-size: 1.1rem;
+}
+
+.doodle-ctl__word strong {
+  font-size: 1.4rem;
+}
+
+.doodle-ctl__canvas {
+  width: 100%;
+  aspect-ratio: 1;
+  border-radius: 12px;
+  background: #fff;
+  touch-action: none;
+  cursor: crosshair;
+}
+
+.doodle-ctl__tools {
+  display: grid;
+  gap: 0.5rem;
+}
+
+.doodle-ctl__dot {
+  display: inline-block;
+  border-radius: 50%;
+  background: var(--pf-fg);
+}
+
+.doodle-guess__hint {
+  margin: 0.5rem 0;
+  font-family: var(--pf-mono);
+  font-size: 1.6rem;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  white-space: pre;
+}
+
+.doodle-guess[data-guessed] .ctl-panel__headline {
+  color: var(--pf-accent);
+}
+
+/* ---------- vote ---------- */
+
+.vote {
+  display: grid;
+  gap: 1rem;
+  align-content: start;
+  height: 100%;
+}
+
+.vote__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  color: var(--pf-muted);
+  font-size: 1.2rem;
+}
+
+.vote__lead {
+  margin: 0;
+  color: var(--pf-muted);
+  font-size: 1.3rem;
+}
+
+.vote__prompt {
+  margin: 0;
+  font-size: clamp(1.8rem, 4vw, 3.2rem);
+  font-weight: 800;
+  line-height: 1.15;
+}
+
+.vote__count {
+  margin: 0;
+  color: var(--pf-muted);
+}
+
+.vote__bars {
+  display: grid;
+  gap: 0.6rem;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.vote__bar {
+  display: grid;
+  grid-template-columns: auto 8rem 1fr auto auto;
+  gap: 0.75rem;
+  align-items: center;
+}
+
+.vote__bar-name {
+  font-weight: 700;
+}
+
+.vote__bar-track {
+  height: 1.4rem;
+  border-radius: 999px;
+  background: var(--pf-card-2);
+  overflow: hidden;
+}
+
+.vote__bar-fill {
+  display: block;
+  width: var(--fill);
+  height: 100%;
+  border-radius: inherit;
+  background: var(--player-color);
+  animation: vote-grow 900ms cubic-bezier(0.2, 0.9, 0.3, 1) both;
+}
+
+@keyframes vote-grow {
+  from {
+    width: 0;
+  }
+}
+
+.vote__bar[data-top] .vote__bar-name {
+  color: var(--pf-accent);
+}
+
+.vote__bar-voters {
+  font-size: 1.2rem;
+}
+
+.vote__bar-count {
+  min-width: 2ch;
+  font-size: 1.3rem;
+  text-align: end;
+}
+
+.vote-ctl__prompt {
+  font-size: 1.3rem;
+}
+
+.vote-ctl__choice {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+@media (max-width: 900px) {
+  .doodle {
+    grid-template-columns: 1fr;
+  }
+
+  .quiz__tiles {
+    grid-template-columns: 1fr;
+  }
+}

@@ -1,5 +1,10 @@
 export * from "./rng.js";
 export * from "./types.js";
+export * from "./options.js";
 export * from "./registry.js";
 export * from "./validation.js";
-export { defineGame } from "./defineGame.js";
+export * from "./timing.js";
+export * from "./roster.js";
+export * from "./engine.js";
+export * from "./harness.js";
+export { defineGame, type GameDefinition } from "./defineGame.js";

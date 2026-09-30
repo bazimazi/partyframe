@@ -14,7 +14,6 @@
  */
 
 import { useEffect, useState } from "react";
-import QRCode from "qrcode";
 import { useT } from "../i18n/I18nProvider.js";
 import { buildJoinUrl, isLoopbackHost } from "../net/endpoint.js";
 
@@ -28,13 +27,18 @@ export function QrPanel({ roomCode, publicBaseUrl }: { roomCode: string; publicB
     if (!joinUrl) return;
     let cancelled = false;
 
-    void QRCode.toDataURL(joinUrl, {
-      // "H" survives a camera at an angle across a room and a slightly dirty TV.
-      errorCorrectionLevel: "H",
-      margin: 2,
-      width: 720,
-      color: { dark: "#0b0913", light: "#ffffff" },
-    })
+    // The encoder is only ever needed on the shared screen, so it is loaded on
+    // demand rather than shipped to every phone.
+    void import("qrcode")
+      .then(({ default: QRCode }) =>
+        QRCode.toDataURL(joinUrl, {
+          // "H" survives a camera at an angle across a room and a slightly dirty TV.
+          errorCorrectionLevel: "H",
+          margin: 2,
+          width: 720,
+          color: { dark: "#0b0913", light: "#ffffff" },
+        }),
+      )
       .then((url) => {
         if (!cancelled) setDataUrl(url);
       })
@@ -55,7 +59,7 @@ export function QrPanel({ roomCode, publicBaseUrl }: { roomCode: string; publicB
 
       <div className="qr-panel__frame">
         {dataUrl ? (
-          <img src={dataUrl} alt={`QR code linking to ${joinUrl}`} width={360} height={360} />
+          <img src={dataUrl} alt={t("host.qrAlt", { url: joinUrl })} width={360} height={360} />
         ) : (
           <div className="qr-panel__placeholder" aria-hidden="true" />
         )}
@@ -73,9 +77,7 @@ export function QrPanel({ roomCode, publicBaseUrl }: { roomCode: string; publicB
 
       {loopback && (
         <p className="qr-panel__warning" role="note">
-          This screen is on <code>localhost</code>, so the QR code will not work from a
-          phone. Reopen it on this machine&apos;s network address (for example
-          <code> http://192.168.1.5:5173/game</code>) and the code will point there.
+          {t("host.loopbackWarning")}
         </p>
       )}
     </aside>

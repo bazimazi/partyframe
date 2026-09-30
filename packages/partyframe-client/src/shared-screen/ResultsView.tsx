@@ -10,57 +10,73 @@
 import type { ClientPlayer } from "@partyframe/protocol";
 import { useT } from "../i18n/I18nProvider.js";
 import { PlayerAvatar } from "../ui/common.js";
+import { Confetti } from "../ui/game/Confetti.js";
+import { Scoreboard } from "../ui/game/Scoreboard.js";
 
 export function ResultsView({
   players,
-  winnerId,
+  winnerIds,
   onRematch,
   onLobby,
 }: {
   players: ClientPlayer[];
-  /** Empty when the match ended in a genuine score tie. */
-  winnerId: string;
+  /** Winner ids from the server. Several mean a tie; none means no winner. */
+  winnerIds: string[];
   onRematch: () => void;
   onLobby: () => void;
 }) {
   const t = useT();
-  const ranked = [...players].sort((a, b) => b.score - a.score || a.seat - b.seat);
-  const winner = ranked.find((player) => player.id === winnerId);
+  const ranked = [...players]
+    .filter((player) => !player.spectator)
+    .sort((a, b) => b.score - a.score || a.seat - b.seat);
+  const winners = ranked.filter((player) => winnerIds.includes(player.id));
+  const showWins = players.some((player) => player.wins > 0);
+
+  const title =
+    winners.length === 1
+      ? t("host.winner", { name: winners[0]!.name })
+      : winners.length > 1
+        ? t("host.winners", { names: winners.map((player) => player.name).join(" & ") })
+        : t("host.noWinner");
+
+  // Podium order: second, first, third - so the winner stands in the middle.
+  const podium = [ranked[1], ranked[0], ranked[2]].filter(
+    (player): player is ClientPlayer => player !== undefined,
+  );
 
   return (
     <div className="results">
-      <h1 className="results__title">
-        {winner ? t("host.winner", { name: winner.name }) : t("host.winnerTie")}
-      </h1>
+      <Confetti active={winners.length > 0} colors={winners.map((player) => player.color)} />
+      <h1 className="results__title">{title}</h1>
 
-      {winner && (
-        <div className="results__winner" style={{ "--player-color": winner.color } as React.CSSProperties}>
-          <PlayerAvatar player={winner} size={120} />
-          <span className="results__trophy" aria-hidden="true">
-            🏆
-          </span>
-        </div>
+      {ranked.length > 0 && (
+        <ol className="podium" data-count={podium.length}>
+          {podium.map((player) => {
+            const place = ranked.indexOf(player) + 1;
+            return (
+              <li
+                key={player.id}
+                className="podium__step"
+                data-place={place}
+                data-winner={winnerIds.includes(player.id) || undefined}
+                style={{ "--player-color": player.color } as React.CSSProperties}
+              >
+                <PlayerAvatar player={player} size={place === 1 ? 112 : 80} />
+                <span className="podium__name">{player.name}</span>
+                <span className="podium__score">{player.score}</span>
+                <span className="podium__block">{place === 1 ? "🏆" : place}</span>
+              </li>
+            );
+          })}
+        </ol>
       )}
 
-      <h2 className="results__subtitle">{t("host.finalScores")}</h2>
-
-      <ol className="results__list">
-        {ranked.map((player, index) => (
-          <li
-            key={player.id}
-            className="results__row"
-            style={{ "--player-color": player.color } as React.CSSProperties}
-          >
-            <span className="results__rank">{index + 1}</span>
-            <PlayerAvatar player={player} size={48} />
-            <span className="results__name">
-              {player.name}
-              {player.isBot && <span className="tag tag--bot">BOT</span>}
-            </span>
-            <span className="results__score">{player.score}</span>
-          </li>
-        ))}
-      </ol>
+      {ranked.length > 3 && (
+        <>
+          <h2 className="results__subtitle">{t("host.finalScores")}</h2>
+          <Scoreboard players={ranked} highlightIds={winnerIds} showWins={showWins} />
+        </>
+      )}
 
       <div className="results__actions">
         <button type="button" className="btn btn--primary btn--big" onClick={onRematch}>

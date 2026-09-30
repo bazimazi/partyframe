@@ -20,9 +20,7 @@
     "noUnusedParameters": true,
     "exactOptionalPropertyTypes": false,
 
-    "declaration": true,
-    "declarationMap": true,
-    "sourceMap": true
+    "noEmit": true
   },
   "exclude": ["node_modules", "dist"]
 }

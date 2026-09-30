@@ -10,16 +10,14 @@
  * created until a real user gesture, and every method is a no-op before then.
  */
 
-export type Voice =
-  | "join"
-  | "ready"
-  | "tick"
-  | "accept"
-  | "reject"
-  | "explode"
-  | "score"
-  | "win"
-  | "start";
+export type BuiltinVoice =
+  "join" | "ready" | "tick" | "accept" | "reject" | "explode" | "score" | "win" | "start";
+
+/** A built-in voice, or one a game registered with `sfx.define()`. */
+export type Voice = BuiltinVoice | (string & {});
+
+/** Synthesises one cue. Runs only after the engine is unlocked. */
+export type VoicePlayer = (ctx: AudioContext, master: GainNode) => void;
 
 class SoundEngine {
   private ctx: AudioContext | null = null;
@@ -27,6 +25,15 @@ class SoundEngine {
   private enabled = true;
   private musicGain: GainNode | null = null;
   private musicTimer: ReturnType<typeof setInterval> | null = null;
+  private custom = new Map<string, VoicePlayer>();
+
+  /**
+   * Registers a game's own cue, or replaces a built-in one. The player gets
+   * the audio context and the master gain; it may synthesise or play a buffer.
+   */
+  define(voice: string, player: VoicePlayer): void {
+    this.custom.set(voice, player);
+  }
 
   /**
    * Creates the audio graph. Must be called from inside a user-gesture handler;
@@ -67,6 +74,15 @@ class SoundEngine {
 
   play(voice: Voice): void {
     if (!this.ctx || !this.master || !this.enabled) return;
+    const custom = this.custom.get(voice);
+    if (custom) {
+      try {
+        custom(this.ctx, this.master);
+      } catch {
+        /* a broken cue must not break play */
+      }
+      return;
+    }
     switch (voice) {
       case "join":
         this.blip([440, 660], 0.09, "triangle");

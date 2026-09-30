@@ -7,19 +7,30 @@
  * screen reader hears who answered and what blew up.
  */
 
+import { useMemo } from "react";
+import { PLATFORM_EVENT, type GameEventMessage } from "@partyframe/protocol";
 import { useT } from "../i18n/I18nProvider.js";
-import type { GameEventMessage } from "@partyframe/protocol";
 
 const VISIBLE = 5;
 
-/** Cues that exist for the game canvas only and would be noise in the feed. */
-const HIDDEN_KINDS = new Set(["bomb-auto-passed", "start-refused"]);
+/** Platform cues that exist for the lobby button, not for the feed. */
+const PLATFORM_HIDDEN: ReadonlySet<string> = new Set([PLATFORM_EVENT.START_REFUSED]);
 
-export function EventFeed({ events }: { events: GameEventMessage[] }) {
+export function EventFeed({
+  events,
+  hiddenKinds,
+}: {
+  events: GameEventMessage[];
+  /** Game-declared kinds to keep out of the feed (canvas-only cues). */
+  hiddenKinds?: readonly string[];
+}) {
   const t = useT();
+  const hidden = useMemo(() => new Set(hiddenKinds ?? []), [hiddenKinds]);
 
   const visible = events
-    .filter((event) => event.messageKey && !HIDDEN_KINDS.has(event.kind))
+    .filter(
+      (event) => event.messageKey && !PLATFORM_HIDDEN.has(event.kind) && !hidden.has(event.kind),
+    )
     .slice(-VISIBLE)
     .reverse();
 

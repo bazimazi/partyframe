@@ -1,13 +1,13 @@
 {
   "extends": "../../tsconfig.base.json",
   "compilerOptions": {
-    "composite": true,
-    "rootDir": "./src",
-    "outDir": "./dist",
     "experimentalDecorators": true,
     "useDefineForClassFields": false,
-    "types": ["node"]
+    "types": ["node"],
+    "paths": {
+      "@partyframe/protocol": ["../protocol/src/index.ts"],
+      "@partyframe/game-core": ["../game-core/src/index.ts"]
+    }
   },
-  "include": ["src/**/*"],
-  "references": [{ "path": "../game-core" }, { "path": "../protocol" }]
+  "include": ["src/**/*"]
 }

@@ -43,12 +43,53 @@ export const CLOCK_BEACON_MS = 5000;
 
 /** Avatar choices offered to players. Emoji keeps the prototype asset-free. */
 export const AVATARS = [
-  "🦊", "🐼", "🐙", "🦄", "🐸", "🐧", "🦖", "🐝",
-  "👻", "🤖", "🐨", "🦉",
+  "🦊",
+  "🐼",
+  "🐙",
+  "🦄",
+  "🐸",
+  "🐧",
+  "🦖",
+  "🐝",
+  "👻",
+  "🤖",
+  "🐨",
+  "🦉",
 ] as const;
 
 /** Distinct, high-contrast player colours. Never the only identity signal. */
 export const PLAYER_COLORS = [
-  "#ff5d5d", "#ffb020", "#ffe14d", "#54d66a",
-  "#3fc7d4", "#5b8cff", "#b579ff", "#ff6fc4",
+  "#ff5d5d",
+  "#ffb020",
+  "#ffe14d",
+  "#54d66a",
+  "#3fc7d4",
+  "#5b8cff",
+  "#b579ff",
+  "#ff6fc4",
 ] as const;
+
+/**
+ * i18n key suffix for each colour, so a colour swatch can be announced to a
+ * screen reader as "Coral" rather than "#ff5d5d".
+ */
+export const PLAYER_COLOR_NAMES: Readonly<Record<(typeof PLAYER_COLORS)[number], string>> = {
+  "#ff5d5d": "coral",
+  "#ffb020": "orange",
+  "#ffe14d": "yellow",
+  "#54d66a": "green",
+  "#3fc7d4": "teal",
+  "#5b8cff": "blue",
+  "#b579ff": "purple",
+  "#ff6fc4": "pink",
+};
+
+/** WebSocket close codes this platform uses. Colyseus reserves everything below 4000. */
+export const CLOSE_CODE = {
+  /** The player was removed by the host. */
+  KICKED: 4001,
+  /** The session ended or expired; reconnecting is pointless. */
+  SESSION_ENDED: 4002,
+  /** A join was refused; the reason travels as a `PartyErrorCode`. */
+  JOIN_REFUSED: 4400,
+} as const;

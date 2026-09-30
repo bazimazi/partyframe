@@ -1,4 +1,5 @@
 # i18n (private)
 
-Platform strings and translator. Not published. Use `addMessages()` from
-`@bazimazi/partyframe-client`.
+Translator with plural rules, locale registry and the English dictionary.
+Not published; bundled into `@bazimazi/partyframe-client`, which re-exports
+`addMessages`, `registerLocale` and friends.

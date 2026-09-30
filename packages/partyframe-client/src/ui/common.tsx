@@ -27,7 +27,11 @@ export function ConnectionBadge({ status }: { status: ConnectionStatus }) {
         : t("controller.disconnected");
 
   const modifier =
-    status === "connected" ? "" : status === "reconnecting" || status === "connecting" ? " status-dot--warn" : " status-dot--off";
+    status === "connected"
+      ? ""
+      : status === "reconnecting" || status === "connecting"
+        ? " status-dot--warn"
+        : " status-dot--off";
 
   return (
     <span className="conn-badge" role="status" aria-live="polite">

@@ -1,6 +1,6 @@
 {
   "name": "@partyframe/game-core",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "private": true,
   "license": "MIT",
   "type": "module",
@@ -11,27 +11,16 @@
     "directory": "packages/game-core"
   },
   "homepage": "https://github.com/bazimazi/party-frame#readme",
-  "main": "./dist/index.js",
-  "types": "./dist/index.d.ts",
+  "main": "./src/index.ts",
+  "types": "./src/index.ts",
   "exports": {
-    ".": {
-      "types": "./dist/index.d.ts",
-      "import": "./dist/index.js",
-      "default": "./dist/index.js"
-    }
+    ".": "./src/index.ts"
   },
   "scripts": {
-    "build": "tsc -b",
-    "dev": "tsc -b --watch --preserveWatchOutput",
-    "typecheck": "tsc -b --pretty",
-    "clean": "rm -rf dist *.tsbuildinfo"
+    "typecheck": "tsc -p tsconfig.json"
   },
   "dependencies": {
-    "@partyframe/protocol": "0.1.0",
-    "zod": "4.4.3",
-    "@standard-schema/spec": "1.0.0"
-  },
-  "files": [
-    "dist"
-  ]
+    "@partyframe/protocol": "0.2.0",
+    "@standard-schema/spec": "^1.0.0"
+  }
 }

@@ -45,10 +45,7 @@ export function saveCredentials(credentials: Omit<StoredCredentials, "expiresAt"
   }
 }
 
-export function loadCredentials(
-  role: ClientRole,
-  roomCode: string,
-): StoredCredentials | null {
+export function loadCredentials(role: ClientRole, roomCode: string): StoredCredentials | null {
   const store = safeStorage();
   if (!store) return null;
 

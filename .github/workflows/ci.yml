@@ -5,16 +5,44 @@ on:
     branches: [main]
   pull_request:
 
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   check:
+    name: Node ${{ matrix.node }}
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        node: [20, 22, 24]
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: ${{ matrix.node }}
           cache: npm
       - run: npm ci
-      - run: npm test
-      - run: npm run build
+      - run: npm run lint
+      - run: npm run format:check
       - run: npm run typecheck
+      - run: npm run build
+      - run: npm test
+      # The example is a real consumer of the built packages: it must typecheck
+      # against the bundled .d.ts and bundle with Vite.
+      - run: npm run typecheck:example
+      - run: npm run build:example
+
+  publishable:
+    name: Tarballs install and run
+    runs-on: ubuntu-latest
+    needs: check
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npm run verify-pack

@@ -1,0 +1,7 @@
+/*
+ * Optional web fonts. `styles.css` deliberately does not import these: a
+ * library stylesheet should not phone Google on every page load, and a party
+ * on a LAN with no internet must not wait on a font request. Import this file
+ * next to `styles.css` if you want Inter and JetBrains Mono, or self-host them.
+ */
+@import url("https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@500;700&display=swap");

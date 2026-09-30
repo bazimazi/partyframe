@@ -3,10 +3,17 @@
  *
  * This is the reference locale: every other locale is typed against its keys, so
  * a missing translation is a compile error rather than a blank label on a TV.
+ *
+ * Keys ending in `.one` / `.other` are plural variants picked by `t()` when the
+ * params carry a numeric `count`.
  */
 export const en = {
   "app.title": "Partyframe",
   "app.tagline": "The TV is the game. Your phone is the controller.",
+  "app.chooseGame": "Choose a game",
+  "app.play": "Play",
+  "app.players": "{min}–{max} players",
+  "app.language": "Language",
 
   "host.newSession": "New game",
   "host.starting": "Creating your room...",
@@ -15,9 +22,12 @@ export const en = {
   "host.orVisit": "or open",
   "host.players": "Players",
   "host.waitingForPlayers": "Waiting for players to join...",
+  "host.readyCount": "{ready} of {total} ready",
   "host.startGame": "Start game",
-  "host.needMorePlayers": "Need at least {count} player(s)",
+  "host.needMorePlayers.one": "Need at least {count} player",
+  "host.needMorePlayers.other": "Need at least {count} players",
   "host.settings": "Settings",
+  "host.gameSettings": "Game settings",
   "host.maxPlayers": "Max players",
   "host.bots": "Bots",
   "host.botDifficulty": "Bot difficulty",
@@ -26,15 +36,26 @@ export const en = {
   "host.round": "Round {round}",
   "host.finalScores": "Final scores",
   "host.winner": "{name} wins!",
+  "host.winners": "{names} win!",
   "host.winnerTie": "It's a tie!",
+  "host.noWinner": "Game over",
+  "host.wins.one": "{count} win",
+  "host.wins.other": "{count} wins",
   "host.events": "Events",
   "host.yourTurn": "Your turn",
+  "host.waitingToPlay": "Joining next match: {names}",
   "host.connecting": "Connecting to the game server...",
   "host.reconnecting": "Connection lost. Reconnecting...",
+  "host.qrAlt": "QR code for {url}",
+  "host.loopbackWarning":
+    "This screen is open on localhost, so phones cannot reach the address in the QR code. Open it on this machine's network address instead, for example http://192.168.1.5:5173/game.",
 
   "difficulty.easy": "Easy",
   "difficulty.medium": "Medium",
   "difficulty.hard": "Hard",
+
+  "option.on": "On",
+  "option.off": "Off",
 
   "join.title": "Join game",
   "join.roomLabel": "Room {code}",
@@ -42,11 +63,25 @@ export const en = {
   "join.namePlaceholder": "Enter a name",
   "join.chooseAvatar": "Choose an avatar",
   "join.chooseColor": "Choose a colour",
+  "join.colorTaken": "{color} (taken)",
   "join.joinGame": "Join game",
   "join.joining": "Joining...",
   "join.enterCode": "Enter room code",
   "join.codePlaceholder": "ABCD",
   "join.go": "Go",
+
+  "color.coral": "Coral",
+  "color.orange": "Orange",
+  "color.yellow": "Yellow",
+  "color.green": "Green",
+  "color.teal": "Teal",
+  "color.blue": "Blue",
+  "color.purple": "Purple",
+  "color.pink": "Pink",
+
+  "player.bot": "BOT",
+  "player.spectator": "NEXT MATCH",
+  "player.you": "You",
 
   "controller.connected": "Connected",
   "controller.disconnected": "Offline",
@@ -58,13 +93,19 @@ export const en = {
   "controller.starting": "Starting...",
   "controller.roundOver": "Round over",
   "controller.gameOver": "Game over",
+  "controller.youWon": "You won!",
+  "controller.youTied": "It's a tie!",
+  "controller.yourRank": "You finished {rank} of {total}",
   "controller.finalScore": "Final score: {score}",
   "controller.waitingForNextRound": "Waiting for the next round...",
+  "controller.spectating": "A match is in progress",
+  "controller.spectatingHint": "You're in for the next one. Watch the TV!",
   "controller.leave": "Leave game",
   "controller.score": "Score",
   "controller.youAreHost": "You're the host",
   "controller.hostStart": "Start game",
   "controller.hostRematch": "Play again",
+  "controller.hostLobby": "Back to lobby",
 
   "event.playerJoined": "{name} joined",
   "event.playerLeft": "{name} left",
@@ -77,6 +118,8 @@ export const en = {
   "error.ROOM_FULL": "Sorry, this game is full.",
   "error.ROOM_CLOSED": "This game has ended. Start a new game on the TV.",
   "error.GAME_IN_PROGRESS": "That game has already started.",
+  "error.NOT_ENOUGH_PLAYERS": "Not enough players to start yet.",
+  "error.SERVER_FULL": "The server is busy right now. Try again in a moment.",
   "error.INVALID_PAYLOAD": "That didn't look right. Try again.",
   "error.NOT_ALLOWED": "You can't do that right now.",
   "error.RATE_LIMITED": "Slow down a moment.",
@@ -85,15 +128,19 @@ export const en = {
   "error.INTERNAL": "Something went wrong. Try again.",
   "error.connectionLost": "Connection lost. Trying to reconnect...",
   "error.sessionExpired": "This game has ended. Start a new game on the TV.",
+  "error.kicked": "The host removed you from the game.",
   "error.retry": "Try again",
 
   "dev.title": "Developer tools",
+  "dev.status": "Status",
+  "dev.rtt": "Round trip",
+  "dev.clockOffset": "Clock offset",
   "dev.addBot": "Add bot",
   "dev.removeBot": "Remove bot",
-  "dev.skipRound": "Skip round",
-  "dev.forceGameOver": "Force game over",
+  "dev.endSession": "End session",
+  "dev.gameCommands": "Game commands",
   "dev.simulateLatency": "Simulated latency",
-  "dev.simulateDrop": "Drop connection (5s)",
+  "dev.off": "off",
   "dev.openController": "Open a controller",
 } as const;
 

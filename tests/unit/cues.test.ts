@@ -10,7 +10,10 @@ describe("voiceForEvent", () => {
 
   it("uses the game map for kinds the platform does not own", () => {
     expect(
-      voiceForEvent("answer-accepted", { "answer-accepted": "accept", "answer-rejected": "reject" }),
+      voiceForEvent("answer-accepted", {
+        "answer-accepted": "accept",
+        "answer-rejected": "reject",
+      }),
     ).toBe("accept");
     expect(voiceForEvent("answer-rejected", { "answer-rejected": "reject" })).toBe("reject");
   });

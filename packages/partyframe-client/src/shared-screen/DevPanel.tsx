@@ -7,7 +7,8 @@
  * `NOT_ALLOWED` rather than a free round skip.
  *
  * Exists because the flows that are hardest to test by hand - reconnection,
- * explosions, a full lobby - are the ones most likely to break.
+ * timeouts, a full lobby - are the ones most likely to break. Game-specific
+ * shortcuts come from the game's `devCommands`, published by the server.
  */
 
 import { useState } from "react";
@@ -23,12 +24,15 @@ export function DevPanel({
   latencyMs,
   clockOffsetMs,
   status,
+  gameCommands,
   send,
 }: {
   roomCode: string;
   latencyMs: number;
   clockOffsetMs: number;
   status: string;
+  /** Names of the active game's `devCommands`. */
+  gameCommands: readonly string[];
   send: (action: SessionAction) => void;
 }) {
   const t = useT();
@@ -38,7 +42,7 @@ export function DevPanel({
   const command = (name: string) => () => send({ type: "dev-command", command: name });
 
   /**
-   * Adds artificial delay to every socket on the server.
+   * Adds artificial delay to every inbound message on the server.
    *
    * Server-wide rather than per-client on purpose: the interesting failures are
    * the ones where the shared screen and a phone disagree about timing, and that
@@ -68,15 +72,15 @@ export function DevPanel({
         <div className="dev-panel__body">
           <dl className="dev-panel__stats">
             <div>
-              <dt>Status</dt>
+              <dt>{t("dev.status")}</dt>
               <dd>{status}</dd>
             </div>
             <div>
-              <dt>RTT</dt>
+              <dt>{t("dev.rtt")}</dt>
               <dd>{latencyMs} ms</dd>
             </div>
             <div>
-              <dt>Clock offset</dt>
+              <dt>{t("dev.clockOffset")}</dt>
               <dd>{Math.round(clockOffsetMs)} ms</dd>
             </div>
           </dl>
@@ -88,16 +92,28 @@ export function DevPanel({
             <button type="button" className="btn btn--ghost" onClick={command("remove-bot")}>
               {t("dev.removeBot")}
             </button>
-            <button type="button" className="btn btn--ghost" onClick={command("short-fuse")}>
-              Short fuse
-            </button>
-            <button type="button" className="btn btn--ghost" onClick={command("skip-round")}>
-              {t("dev.skipRound")}
-            </button>
-            <button type="button" className="btn btn--ghost" onClick={command("force-game-over")}>
-              {t("dev.forceGameOver")}
+            <button type="button" className="btn btn--ghost" onClick={command("end-session")}>
+              {t("dev.endSession")}
             </button>
           </div>
+
+          {gameCommands.length > 0 && (
+            <div className="dev-panel__row">
+              <span className="dev-panel__row-label">{t("dev.gameCommands")}</span>
+              <div className="dev-panel__actions">
+                {gameCommands.map((name) => (
+                  <button
+                    key={name}
+                    type="button"
+                    className="btn btn--ghost"
+                    onClick={command(name)}
+                  >
+                    {name}
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
 
           <div className="dev-panel__row">
             <span className="dev-panel__row-label">{t("dev.simulateLatency")}</span>
@@ -110,7 +126,7 @@ export function DevPanel({
                   aria-pressed={latency === preset}
                   onClick={() => applyLatency(preset)}
                 >
-                  {preset === 0 ? "off" : `${preset}ms`}
+                  {preset === 0 ? t("dev.off") : `${preset}ms`}
                 </button>
               ))}
             </div>

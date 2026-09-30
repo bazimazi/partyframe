@@ -8,7 +8,7 @@
  * loop. Nothing crosses this boundary except plain reads.
  */
 
-import type { ClientPlayer, GameEventMessage } from "@partyframe/protocol";
+import type { ClientPlayer, GameEventMessage, SessionStatus } from "@partyframe/protocol";
 import type { Voice } from "./sfx.js";
 
 export interface StageBridge {
@@ -22,18 +22,24 @@ export interface StageBridge {
   pendingEvents: GameEventMessage[];
   /** True while the session is in a state where the game should be drawn. */
   running: boolean;
+  /** The session status, for scenes that show a countdown while `STARTING`. */
+  status: SessionStatus;
   /** Plays a sound effect, routed through the shared screen's audio engine. */
   playSound: (voice: Voice) => void;
 }
 
-export function createStageBridge(serverNow: () => number): StageBridge {
+export function createStageBridge(
+  serverNow: () => number,
+  playSound: (voice: Voice) => void = () => undefined,
+): StageBridge {
   return {
     game: null,
     players: [],
     serverNow,
     pendingEvents: [],
     running: false,
-    playSound: () => undefined,
+    status: "CREATED",
+    playSound,
   };
 }
 

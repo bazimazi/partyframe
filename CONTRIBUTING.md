@@ -1,49 +1,77 @@
 # Contributing
 
 This is an npm workspaces monorepo. Only `@bazimazi/partyframe-server` and
-`@bazimazi/partyframe-client` are published. `protocol`, `game-core`, and `i18n` stay
-private and are bundled into those two.
+`@bazimazi/partyframe-client` are published. `protocol`, `game-core` and `i18n`
+are private, source-only packages (their `exports` point at `src/`) that get
+bundled into the two published ones at build time.
 
-The runnable sample is `examples/minimal`.
+```
+packages/protocol            wire contract
+packages/game-core           rules contract, engine, harness
+packages/i18n                translator and English strings
+packages/partyframe-server   published
+packages/partyframe-client   published
+examples/showcase            five games that exercise the framework
+tests/unit                   pure logic, plus the example's game tests
+tests/integration            real server + real Colyseus clients
+scripts/verify-pack.mjs      installs the packed tarballs into an empty project
+docs/                        guides
+```
 
 ## Develop
 
 ```bash
 npm install
-npm test
-npm run build
-npm run example
+npm run check          # typecheck, build, test, then typecheck + build the example
+npm run example        # build, then run the sample server (2567) and Vite (5173)
+npm run dev            # watch-rebuild both packages and run the example
 ```
 
-`npm run example` builds the packages, then starts the Colyseus server on port
-2567 and the Vite app on port 5173. Open the TV at
-`http://<this-machine>:5173/game` — not `localhost`, or phones cannot scan the
-QR code.
+Individual steps:
+
+| Command | What |
+| --- | --- |
+| `npm run lint` / `format` | ESLint and Prettier (CI checks both) |
+| `npm run typecheck` | `tsc` per package (source-only, no emit) |
+| `npm run build` | tsup bundles for the two published packages |
+| `npm test` | unit + integration projects (vitest) |
+| `npm run test:integration` | only the socket tests |
+| `npm run verify-pack` | pack, install into a temp project, boot a server from it |
+| `npm run typecheck:example` / `build:example` | the sample as a real consumer (needs `build` first) |
+
+Tests import the published packages by name and resolve them to source, so
+they never depend on a stale `dist/`. The example, by contrast, deliberately
+consumes the built packages.
+
+Line endings are LF everywhere (`.gitattributes`). Open the TV page on your
+LAN address, not `localhost`, or phones cannot scan the QR code.
+
+## Adding a game to the example
+
+1. Rules in `examples/showcase/src/games/<id>/game.ts` with `defineGame`.
+2. Web in `.../web.tsx` with `defineWebGame` (React `Screen` or a lazy Phaser
+   `scene`).
+3. Strings in `examples/showcase/src/i18n/en.ts`.
+4. Register in `server.ts` and `web.tsx`.
+5. A harness test in `examples/showcase/tests/<id>.test.ts`.
 
 ## Publishing
 
-The first publish of a new package requires **account 2FA and an OTP**. A
-granular token can update packages that already exist; it cannot create these
-two names. Tokens in `.env.local` are ignored.
+`prepack` rebuilds, and `npm run verify-pack` proves the tarballs work
+outside the workspace - run it before every publish. Both public packages are
+published together with the same version.
 
-1. On the **bazimazi** account, enable [two-factor authentication](https://www.npmjs.com/settings/~/tfa) (authenticator app or Windows Hello).
-2. From the repo root:
+The first publish of a new package name needs account 2FA and an OTP; a
+granular token can update existing packages. Tokens in `.env.local` are
+ignored by git.
 
-```powershell
-npm login
-npm whoami
-```
-
-`npm whoami` must print `bazimazi`.
-3. Publish with a fresh authenticator code each time:
-
-```powershell
-npm test
-npm run build
+```bash
+npm run check
+npm run verify-pack
+npm login && npm whoami          # must print bazimazi
 npm publish -w @bazimazi/partyframe-server --access public --otp=123456
 npm publish -w @bazimazi/partyframe-client --access public --otp=123456
 ```
 
-Do not publish `protocol`, `game-core`, `i18n`, the root workspace, or the
-example. Those three are `bundleDependencies` of the server and client packages,
-so they ship inside those tarballs and never get their own npm pages.
+Do not publish `protocol`, `game-core`, `i18n`, the root workspace or the
+example.

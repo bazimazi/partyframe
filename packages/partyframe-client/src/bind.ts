@@ -1,35 +1,65 @@
 /**
  * Catalog bindings for the TV and phone shells.
  *
- * Kit must not import a host game catalog - that code already depends on kit
- * for `WebGame`. The app wires the two together once at startup.
+ * The shells must not import a host's game catalog - that code already depends
+ * on this package for `WebGame`. The app wires the two together once at
+ * startup, before any route mounts:
+ *
+ * ```ts
+ * bindKit({ games: [tapWeb, quizWeb] });
+ * ```
  */
 
-import type { WebGame } from "./types.js";
+import type { AnyWebGame, GameSceneClass } from "./types.js";
 
-export type GameSceneClass = (new () => import("phaser").Scene) & { KEY: string };
+export type { GameSceneClass };
 
 export interface KitCatalog {
-  getWebGame: (gameId: string) => WebGame | undefined;
+  /** Every game this web app can present. */
+  games: readonly AnyWebGame[];
+}
+
+/** The 0.1 shape, still accepted so existing hosts keep working. */
+export interface LegacyKitCatalog {
+  getWebGame: (gameId: string) => AnyWebGame | undefined;
   loadSceneForGame: (gameId: string) => Promise<GameSceneClass | null>;
 }
 
-let catalog: KitCatalog | null = null;
+let lookup: ((gameId: string) => AnyWebGame | undefined) | null = null;
+let legacyScene: LegacyKitCatalog["loadSceneForGame"] | null = null;
 
-export function bindKit(next: KitCatalog): void {
-  catalog = next;
+export function bindKit(catalog: KitCatalog | LegacyKitCatalog): void {
+  if ("games" in catalog) {
+    const byId = new Map(catalog.games.map((game) => [game.id, game]));
+    lookup = (gameId) => byId.get(gameId);
+    legacyScene = null;
+  } else {
+    lookup = catalog.getWebGame;
+    legacyScene = catalog.loadSceneForGame;
+  }
 }
 
-export function getWebGame(gameId: string): WebGame | undefined {
-  if (!catalog) {
+function requireCatalog(): (gameId: string) => AnyWebGame | undefined {
+  if (!lookup) {
     throw new Error("@bazimazi/partyframe-client: bindKit() must run before routes mount");
   }
-  return catalog.getWebGame(gameId);
+  return lookup;
 }
 
-export function loadSceneForGame(gameId: string): Promise<GameSceneClass | null> {
-  if (!catalog) {
-    throw new Error("@bazimazi/partyframe-client: bindKit() must run before routes mount");
-  }
-  return catalog.loadSceneForGame(gameId);
+export function getWebGame(gameId: string): AnyWebGame | undefined {
+  return requireCatalog()(gameId);
+}
+
+/** The Phaser scene for a game, or null when it renders with a React `Screen`. */
+export async function loadSceneForGame(gameId: string): Promise<GameSceneClass | null> {
+  const game = requireCatalog()(gameId);
+  if (game?.scene) return game.scene();
+  if (legacyScene) return legacyScene(gameId);
+  return null;
+}
+
+/** Test helper. */
+export function resetKit(): void {
+  lookup = null;
+  legacyScene = null;
 }

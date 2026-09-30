@@ -1,4 +1,5 @@
 # protocol (private)
 
-Wire types and zod schemas. Not published. Bundled into `@bazimazi/partyframe-server`
-and `@bazimazi/partyframe-client`.
+Wire contract shared by server and client: constants, Zod schemas for every
+client message, session/player types, option field descriptors and the
+`/api/config` shape. Not published; bundled into both public packages.

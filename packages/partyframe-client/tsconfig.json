@@ -1,12 +1,12 @@
 {
   "extends": "../../tsconfig.base.json",
   "compilerOptions": {
-    "composite": true,
-    "rootDir": "./src",
-    "outDir": "./dist",
     "jsx": "react-jsx",
-    "lib": ["ES2023", "DOM", "DOM.Iterable"]
+    "lib": ["ES2023", "DOM", "DOM.Iterable"],
+    "paths": {
+      "@partyframe/protocol": ["../protocol/src/index.ts"],
+      "@partyframe/i18n": ["../i18n/src/index.ts"]
+    }
   },
-  "include": ["src/**/*"],
-  "references": [{ "path": "../protocol" }, { "path": "../i18n" }]
+  "include": ["src/**/*"]
 }

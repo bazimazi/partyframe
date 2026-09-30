@@ -1,6 +1,6 @@
 {
   "name": "partyframe",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "private": true,
   "license": "MIT",
   "type": "module",
@@ -29,16 +29,33 @@
     "node": ">=20.11"
   },
   "scripts": {
-    "build": "npm run build -w @partyframe/protocol -w @partyframe/game-core -w @partyframe/i18n -w @bazimazi/partyframe-server -w @bazimazi/partyframe-client --if-present",
-    "dev": "npm run dev -w @partyframe/protocol -w @partyframe/game-core -w @partyframe/i18n -w @bazimazi/partyframe-server -w @bazimazi/partyframe-client --if-present",
-    "typecheck": "npm run typecheck -w @partyframe/protocol -w @partyframe/game-core -w @partyframe/i18n -w @bazimazi/partyframe-server -w @bazimazi/partyframe-client --if-present",
+    "build": "npm run build -w @bazimazi/partyframe-server -w @bazimazi/partyframe-client",
+    "dev": "concurrently -k -n server,client,example \"npm:dev -w @bazimazi/partyframe-server\" \"npm:dev -w @bazimazi/partyframe-client\" \"npm:dev -w @partyframe/example-showcase\"",
+    "typecheck": "npm run typecheck -w @partyframe/protocol -w @partyframe/game-core -w @partyframe/i18n -w @bazimazi/partyframe-server -w @bazimazi/partyframe-client",
     "test": "vitest run",
     "test:watch": "vitest",
-    "example": "npm run build && npm run dev -w @partyframe/example-minimal"
+    "test:integration": "vitest run --project integration",
+    "verify-pack": "node scripts/verify-pack.mjs",
+    "example": "npm run build && npm run dev -w @partyframe/example-showcase",
+    "clean": "npm run clean --workspaces --if-present",
+    "typecheck:example": "npm run typecheck -w @partyframe/example-showcase",
+    "build:example": "npm run build -w @partyframe/example-showcase",
+    "check": "npm run lint && npm run format:check && npm run typecheck && npm run build && npm test && npm run typecheck:example && npm run build:example",
+    "lint": "eslint .",
+    "format": "prettier --write .",
+    "format:check": "prettier --check ."
   },
   "devDependencies": {
+    "@eslint/js": "^10.0.1",
     "@types/node": "24.13.3",
+    "concurrently": "9.2.1",
+    "eslint": "^10.11.0",
+    "eslint-plugin-react-hooks": "^7.1.1",
+    "globals": "^17.12.0",
+    "prettier": "^3.9.9",
+    "tsup": "8.5.1",
     "typescript": "5.9.3",
+    "typescript-eslint": "^8.71.0",
     "vitest": "4.1.11",
     "zod": "4.4.3"
   }

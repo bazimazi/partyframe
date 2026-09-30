@@ -7,9 +7,7 @@
 
 import type { StandardSchemaV1 } from "@standard-schema/spec";
 
-export type ValidationResult<T> =
-  | { ok: true; value: T }
-  | { ok: false; issues: readonly string[] };
+export type ValidationResult<T> = { ok: true; value: T } | { ok: false; issues: readonly string[] };
 
 /**
  * Runs a Standard Schema synchronously.

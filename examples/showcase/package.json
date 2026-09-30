@@ -1,0 +1,30 @@
+{
+  "name": "@partyframe/example-showcase",
+  "version": "0.2.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "concurrently -k -n server,web \"tsx watch src/server.ts\" \"vite --host\"",
+    "build": "vite build",
+    "start": "tsx src/server.ts --serve",
+    "typecheck": "tsc -p tsconfig.json"
+  },
+  "dependencies": {
+    "@bazimazi/partyframe-client": "0.2.0",
+    "@bazimazi/partyframe-server": "0.2.0",
+    "phaser": "4.2.1",
+    "react": "19.2.8",
+    "react-dom": "19.2.8",
+    "react-router-dom": "7.18.2",
+    "zod": "4.4.3"
+  },
+  "devDependencies": {
+    "@types/react": "19.2.18",
+    "@types/react-dom": "19.2.5",
+    "@vitejs/plugin-react": "6.1.1",
+    "concurrently": "9.2.1",
+    "tsx": "4.23.13",
+    "typescript": "5.9.3",
+    "vite": "8.2.2"
+  }
+}

@@ -92,8 +92,7 @@ export class ClockSync {
   private probe(): void {
     this.sendPing(Date.now());
     this.probesSent += 1;
-    const interval =
-      this.probesSent < WARMUP_PROBES ? WARMUP_INTERVAL_MS : STEADY_INTERVAL_MS;
+    const interval = this.probesSent < WARMUP_PROBES ? WARMUP_INTERVAL_MS : STEADY_INTERVAL_MS;
     this.timer = setTimeout(() => this.probe(), interval);
   }
 }
