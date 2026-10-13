@@ -3,7 +3,7 @@
  * English-only app never shows a control with one option.
  */
 
-import { listLocales } from "@partyframe/i18n";
+import { listLocales } from "./translate.js";
 import { useI18n } from "./I18nProvider.js";
 
 export function LocaleSwitcher({ className = "" }: { className?: string }) {

@@ -2,8 +2,8 @@ import { defineConfig } from "vitest/config";
 
 /**
  * Tests import the published packages by name but resolve them to source, so
- * the suite never depends on a stale `dist/`. The private `@partyframe/*`
- * packages already point at their sources through `exports`.
+ * the suite never depends on a stale `dist/`. The private protocol package
+ * already points at its source through `exports`.
  */
 const alias = {
   "@bazimazi/partyframe-server": new URL(

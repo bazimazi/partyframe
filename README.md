@@ -190,8 +190,9 @@ harness, so a game that passes its tests behaves identically in a room.
 | `@bazimazi/partyframe-server` | `defineGame`, `listen`, `createTestMatch`, `MatchEngine`, timing/roster helpers, Colyseus room |
 | `@bazimazi/partyframe-client` | `PartyApp`, `defineWebGame`, `bindKit`, session client, clock sync, sounds, `styles.css` |
 
-The protocol, engine and i18n live in private workspace packages and are
-bundled into the two above, so a consumer installs exactly two packages.
+The engine and test harness live inside the server package; translation lives
+inside the client. A private protocol workspace holds their shared wire
+contract and is bundled into both, so a consumer installs exactly two packages.
 
 ## Status
 

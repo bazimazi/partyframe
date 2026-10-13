@@ -14,7 +14,7 @@ import {
   hasExpired,
   startDeadline,
   type GameContext,
-} from "@partyframe/game-core";
+} from "@bazimazi/partyframe-server";
 import { PLATFORM_EVENT } from "@partyframe/protocol";
 
 /** A two-phase game: a countdown, then first-to-target taps. */

@@ -10,7 +10,7 @@
 
 import type Phaser from "phaser";
 import type { ComponentType } from "react";
-import type { Translate } from "@partyframe/i18n";
+import type { Translate } from "./i18n/translate.js";
 import type {
   ClientPlayer,
   ControllerEnvelope,

@@ -1,7 +1,7 @@
 {
   "name": "partyframe",
   "version": "0.2.0",
-  "private": true,
+  "private": false,
   "license": "MIT",
   "type": "module",
   "description": "TV-plus-phones party-game framework. Shared screen is the game; phones are the controllers.",
@@ -31,7 +31,7 @@
   "scripts": {
     "build": "npm run build -w @bazimazi/partyframe-server -w @bazimazi/partyframe-client",
     "dev": "concurrently -k -n server,client,example \"npm:dev -w @bazimazi/partyframe-server\" \"npm:dev -w @bazimazi/partyframe-client\" \"npm:dev -w @partyframe/example-showcase\"",
-    "typecheck": "npm run typecheck -w @partyframe/protocol -w @partyframe/game-core -w @partyframe/i18n -w @bazimazi/partyframe-server -w @bazimazi/partyframe-client",
+    "typecheck": "npm run typecheck -w @partyframe/protocol -w @bazimazi/partyframe-server -w @bazimazi/partyframe-client",
     "test": "vitest run",
     "test:watch": "vitest",
     "test:integration": "vitest run --project integration",

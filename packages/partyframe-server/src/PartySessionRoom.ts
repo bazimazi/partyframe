@@ -20,7 +20,7 @@ import {
   type GamePlayer,
   type PlayerChange,
   type PlayerRegistry,
-} from "@partyframe/game-core";
+} from "./game/index.js";
 import {
   ABSOLUTE_MAX_PLAYERS,
   AVATARS,

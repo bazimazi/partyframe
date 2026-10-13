@@ -7,7 +7,7 @@
  */
 
 import { describe, expect, it } from "vitest";
-import { Rng } from "@partyframe/game-core";
+import { Rng } from "@bazimazi/partyframe-server";
 
 describe("Rng", () => {
   it("produces the same sequence for the same seed", () => {

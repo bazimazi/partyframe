@@ -1,22 +1,27 @@
 # Contributing
 
 This is an npm workspaces monorepo. Only `@bazimazi/partyframe-server` and
-`@bazimazi/partyframe-client` are published. `protocol`, `game-core` and `i18n`
-are private, source-only packages (their `exports` point at `src/`) that get
-bundled into the two published ones at build time.
+`@bazimazi/partyframe-client` are published. The shared `protocol` is a
+private, source-only package (its `exports` point at `src/`) that gets bundled
+into both published packages. Game logic lives in the server's `src/game/`;
+translation lives in the client's `src/i18n/`.
 
 ```
 packages/protocol            wire contract
-packages/game-core           rules contract, engine, harness
-packages/i18n                translator and English strings
-packages/partyframe-server   published
-packages/partyframe-client   published
+packages/partyframe-server   rules contract, engine, harness and session server
+  src/game/                 transport-independent game logic and test harness
+packages/partyframe-client   React shells, networking, translation and UI
+  src/i18n/                 translator, English strings and React locale controls
 examples/showcase            five games that exercise the framework
 tests/unit                   pure logic, plus the example's game tests
 tests/integration            real server + real Colyseus clients
 scripts/verify-pack.mjs      installs the packed tarballs into an empty project
 docs/                        guides
 ```
+
+See [Finding your way around](docs/architecture.md#finding-your-way-around)
+for the starting point for each kind of change. Keep implementation local to
+its owning package; use `protocol` for contracts shared across the network.
 
 ## Develop
 
@@ -73,5 +78,4 @@ npm publish -w @bazimazi/partyframe-server --access public --otp=123456
 npm publish -w @bazimazi/partyframe-client --access public --otp=123456
 ```
 
-Do not publish `protocol`, `game-core`, `i18n`, the root workspace or the
-example.
+Do not publish `protocol`, the root workspace or the example.

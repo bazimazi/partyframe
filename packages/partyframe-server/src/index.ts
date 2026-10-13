@@ -49,7 +49,7 @@ export {
   type SelectOptionField,
   type TestMatchConfig,
   type ValidationResult,
-} from "@partyframe/game-core";
+} from "./game/index.js";
 
 // ---- Wire contract, re-exported so a game never needs the private package.
 export {

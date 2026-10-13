@@ -5,16 +5,37 @@
 ```
 packages/
   protocol           wire contract: constants, message schemas, session types, option fields
-  game-core          PartyGame contract, MatchEngine, test harness, rng, timing/roster helpers
-  i18n               translator, English dictionary, locale registry
-  partyframe-server  Colyseus room, adapters, listen(), rate limits, room codes   (published)
-  partyframe-client  React shells, session client, clock sync, sounds, styles     (published)
+  partyframe-server  rules, engine, test harness and Colyseus server             (published)
+  partyframe-client  React shells, session client, i18n, sounds and styles       (published)
 ```
 
-The three private packages are inlined into the two published ones at build
+Only the protocol is a private workspace package: both server and client use
+its wire contract. It is inlined into the two published packages at build
 time (tsup), so consumers install exactly two packages and never see
 `@partyframe/*`. `scripts/verify-pack.mjs` installs the packed tarballs into
 an empty project and boots them, and CI runs it on every push.
+
+## Finding your way around
+
+Start with `examples/showcase/src/games/tap` for a complete, small game.
+The `src/index.ts` in each published package lists its public API.
+
+| If you are changing… | Start here |
+| --- | --- |
+| Game contracts, rules execution or the test harness | `packages/partyframe-server/src/game/` (`types.ts`, `engine.ts`, `harness.ts`) |
+| Session lifecycle, players or reconnection on the server | `packages/partyframe-server/src/PartySessionRoom.ts` |
+| Server startup and HTTP endpoints | `packages/partyframe-server/src/listen.ts` |
+| Messages or state shared by server and client | `packages/protocol/src/` |
+| Client connections and clock sync | `packages/partyframe-client/src/net/` |
+| TV screens or phone panels | `packages/partyframe-client/src/shared-screen/` or `src/controller/` |
+| Reusable game controls | `packages/partyframe-client/src/ui/game/` |
+| Translation, English strings or locale selection | `packages/partyframe-client/src/i18n/` |
+
+The server's `game/` directory stays independent of Colyseus and the room:
+the engine and harness only depend on the game contract and shared protocol.
+The client's `i18n/translate.ts` is the dependency-free translator; the React
+provider and locale switcher live beside it. Code used by only one package
+belongs inside that package rather than in another workspace.
 
 ## Authority model
 

@@ -16,9 +16,6 @@ import {
   requireGame,
   resetRegistry,
   type PartyGame,
-} from "@partyframe/game-core";
-import { createTranslator, en, resolveLocale } from "@partyframe/i18n";
-import {
   GAME_ACTION_LIMITS,
   RateLimiter,
   SESSION_ACTION_LIMITS,
@@ -26,6 +23,8 @@ import {
   generateUniqueRoomCode,
   isRoomCodeShaped,
 } from "@bazimazi/partyframe-server";
+import { createTranslator, resolveLocale } from "@bazimazi/partyframe-client";
+import { en } from "../../packages/partyframe-client/src/i18n/en.js";
 
 const stubGame: PartyGame = {
   id: "stub",

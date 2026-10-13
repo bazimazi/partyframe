@@ -13,7 +13,7 @@ import {
   remainingMs,
   startDeadline,
   topScorers,
-} from "@partyframe/game-core";
+} from "@bazimazi/partyframe-server";
 
 const fields = {
   rounds: { type: "number", labelKey: "o.rounds", default: 3, min: 1, max: 10 },

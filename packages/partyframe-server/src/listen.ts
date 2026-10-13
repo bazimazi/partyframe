@@ -19,7 +19,7 @@ import { createReadStream, statSync } from "node:fs";
 import { extname, normalize, resolve, sep } from "node:path";
 import { Server, matchMaker } from "@colyseus/core";
 import { WebSocketTransport } from "@colyseus/ws-transport";
-import type { AnyPartyGame } from "@partyframe/game-core";
+import type { AnyPartyGame } from "./game/index.js";
 import { PARTY_ROOM, isRunningStatus, type PublicServerConfig } from "@partyframe/protocol";
 import { install, listInstalledGames, type GameNetworkAdapter } from "./adapters.js";
 import { EVENT, bindRuntime, runtimeHost, type BindRuntimeInput } from "./bind.js";

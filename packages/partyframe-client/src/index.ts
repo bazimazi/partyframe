@@ -53,7 +53,7 @@ export {
   type Translate,
   type TranslateParams,
   type TranslationKey,
-} from "@partyframe/i18n";
+} from "./i18n/translate.js";
 
 // ---- Networking, for custom shells.
 export {

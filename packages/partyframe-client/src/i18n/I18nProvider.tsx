@@ -8,7 +8,7 @@
  */
 
 import { createContext, useContext, useEffect, useMemo, useState, type ReactNode } from "react";
-import { createTranslator, resolveLocale, type Translate } from "@partyframe/i18n";
+import { createTranslator, resolveLocale, type Translate } from "./translate.js";
 
 interface I18nValue {
   t: Translate;

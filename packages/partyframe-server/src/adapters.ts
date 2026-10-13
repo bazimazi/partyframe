@@ -8,7 +8,7 @@
  * `gameId` and never imports a game package itself.
  */
 
-import { getGame, registerGame, requireGame, type AnyPartyGame } from "@partyframe/game-core";
+import { getGame, registerGame, requireGame, type AnyPartyGame } from "./game/index.js";
 import type { InstalledGameInfo } from "@partyframe/protocol";
 import { JsonSessionSchema, setIfChanged, type SessionSchema } from "./sessionSchema.js";
 
